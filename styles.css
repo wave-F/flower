@@ -12,6 +12,10 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  padding:
+    env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,16 +28,27 @@ body {
 }
 
 .app {
-  width: min(calc(100vh * 9 / 16), calc(100vw - 12px));
-  max-width: 460px;
+  /* 框宽度：跟随屏幕，上限 430px(贴合 iPhone Pro Max) */
+  --frame-w: min(calc(100vw - 12px), 430px);
+  /* 可用高度：动态视口高度 - 上下安全区 - .app 自身上下 padding(6px*2) */
+  --avail-h: calc(
+    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 12px
+  );
+  width: var(--frame-w);
   padding: 6px 0;
 }
 
 .phone-frame {
   position: relative;
   display: flex;
-  aspect-ratio: 9 / 16;
   width: 100%;
+  /* 高度自适应：尽量用满可用高度，但夹在 9:16(下限) ~ 9:19.5(上限) 之间。
+     上下限按框宽度换算，避免 height:100% 的循环依赖 */
+  height: clamp(
+    calc(var(--frame-w) * 16 / 9),
+    var(--avail-h),
+    calc(var(--frame-w) * 19.5 / 9)
+  );
   padding: 0;
   border-radius: 36px;
   background:
@@ -477,7 +492,9 @@ body {
 
 @media (max-width: 720px) {
   .app {
-    width: min(calc(100vh * 9 / 16), calc(100vw - 12px));
+    /* 手机：框宽直接跟随屏幕(仍受 430 上限约束)，高度由 .phone-frame 自适应 */
+    --frame-w: min(calc(100vw - 12px), 430px);
+    width: var(--frame-w);
     padding: 6px 0;
   }
 

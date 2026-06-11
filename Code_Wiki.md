@@ -76,6 +76,7 @@
 - 全局页面样式
 - 棋盘、格子、花朵 tile 的视觉表现
 - 消除、生成、入场等 CSS 过渡动画
+- 响应式布局与移动端适配（详见下文「布局与适配」）
 
 #### `package.json`
 - 目前仅用于声明项目采用 ES Module 模式
@@ -86,7 +87,7 @@
 #### `src/main.js`
 - 应用启动入口
 - 初始化 DOM、状态、视图模块
-- 监听点击和 resize
+- 监听点击、resize、orientationchange
 - 驱动整局流程：点击 -> 移除 -> 掉落 -> 连锁 -> 成功/失败判定
 
 ### `src/config/`
@@ -167,6 +168,41 @@
 #### `src/utils/time.js`
 - 提供简单等待函数 `wait()`
 - 用于动画时序控制
+
+## 布局与适配 Layout & Responsiveness
+
+外层框（`.phone-frame`，模拟手机外壳）的尺寸策略，目标是「手机用满竖向空间 + 桌面网页保持正常竖屏卡片」。
+
+### 宽度 Width
+
+- 定义在 `.app` 的 `--frame-w`：`min(100vw - 12px, 430px)`
+- `430px` 是上限，等于最宽 iPhone（Pro Max 系列）的逻辑宽度，覆盖所有现役 iPhone，桌面上也不会过宽
+- 小屏自动跟随屏幕收缩
+
+### 高度（弹性比例）Height (Elastic Aspect Ratio)
+
+- 不再使用固定 `aspect-ratio: 9/16`
+- `.phone-frame` 高度用 `clamp()` 夹在两个比例之间：
+  - 下限 `--frame-w * 16/9`（9:16，偏方，老机型/桌面下限）
+  - 期望 `--avail-h`（可用视口高度，尽量用满）
+  - 上限 `--frame-w * 19.5/9`（9:19.5，现代 iPhone 细长屏）
+- 效果：现代 iPhone 框接近满屏；iPhone SE(9:16) 正好填满；桌面被限制在 9:16~9:19.5 之间，仍是正常竖屏卡片
+- 注意：上下限按**框宽度**换算，而非 `height: 100%`，以避免父子高度循环依赖
+
+### 动态视口高度 Dynamic Viewport Height
+
+- `body` 与可用高度计算使用 `100dvh`（带 `100vh` 兜底）
+- 解决 iOS Safari 地址栏伸缩导致 `100vh` 偏大、内容被遮挡的问题
+
+### 安全区 Safe Area
+
+- `index.html` 的 viewport 加了 `viewport-fit=cover`，否则 iOS 读不到 `env(safe-area-inset-*)`
+- `body` 用 `env(safe-area-inset-*)` 设置四向内边距，避开刘海/灵动岛与底部横条
+
+### 棋盘自适应 Board Auto-fit（无需手动改）
+
+- 棋盘格子尺寸不是写死的；`src/ui/boardLayout.js` 的 `fitBoardToViewport()` 会在运行时按容器尺寸算出 `--tile-size`（最小 34px 保底），CSS 里的 `--tile-size: 52px` 仅为初始兜底值
+- `src/main.js` 同时监听 `resize` 与 `orientationchange`，窗口尺寸/横竖屏变化时会重算棋盘并刷新棋子位置
 
 ## 核心数据结构 Core Data Shapes
 
@@ -293,7 +329,16 @@
 - aria
 - transition-delay
 
-### 5. 当前没有引入 Event Bus
+### 5. 不要改回固定比例 / 注意可用高度变量
+
+布局依赖 `.app` 上的 `--frame-w` 与 `--avail-h` 两个变量，以及 `.phone-frame` 的 `clamp()` 高度。修改外框样式时：
+
+- 不要给 `.phone-frame` 加回固定 `aspect-ratio: 9/16`，否则手机上会重新出现上下大留白
+- 改宽度上限请同时检查 `@media (max-width: 720px)` 段里的 `--frame-w`（两处要一致）
+- 上下限用框宽度换算，不要用 `height: 100%`（会循环依赖）
+- 想让棋盘在 iPhone 上更大，调 `src/ui/boardLayout.js` 里的高度系数 `0.56`，而非改外框
+
+### 6. 当前没有引入 Event Bus
 
 这是刻意保持轻量的结果。当前由 `src/main.js` 直接做模块编排，便于快速迭代。
 

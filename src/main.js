@@ -53,6 +53,7 @@ export function initialize(doc = globalThis.document) {
   elements.boardShellElement.addEventListener("click", onBoardClick);
   elements.nextLevelButtonElement.addEventListener("click", onNextLevelButtonClick);
   window.addEventListener("resize", onViewportResize);
+  window.addEventListener("orientationchange", onViewportResize);
 
   void resetBoard();
 
