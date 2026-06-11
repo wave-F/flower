@@ -24,8 +24,8 @@ body {
 }
 
 .app {
-  width: min(calc(100vh * 9 / 16), calc(100vw - 24px));
-  max-width: 640px;
+  width: min(calc(100vh * 9 / 16), calc(100vw - 12px));
+  max-width: 460px;
   padding: 6px 0;
 }
 
@@ -54,16 +54,14 @@ body {
 
 .game-screen {
   flex-direction: column;
-  padding: 16px 10px 12px;
+  padding: 14px 10px 10px;
   gap: 10px;
 }
 
 .hud {
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: block;
 }
 
 .hud-bar {
@@ -152,6 +150,14 @@ body {
   text-shadow: 0 2px 0 rgba(60, 30, 89, 0.48);
 }
 
+.hud-footer,
+.status-panel,
+.level-label,
+.status-title,
+.status-detail {
+  display: none;
+}
+
 .hud-card {
   position: relative;
   display: flex;
@@ -173,6 +179,13 @@ body {
 .hud-card--moves {
   flex: 0 0 104px;
   align-items: center;
+}
+
+.next-level-button {
+  flex: 0 0 auto;
+  min-width: 88px;
+  width: auto;
+  padding: 10px 14px;
 }
 
 .hud-card-title {
@@ -284,51 +297,7 @@ body {
   text-shadow: 0 2px 0 rgba(255, 255, 255, 0.55);
 }
 
-.hud-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.status-panel {
-  padding: 12px 16px;
-  border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(255, 252, 248, 0.96), rgba(255, 239, 223, 0.96)),
-    linear-gradient(135deg, rgba(255, 214, 188, 0.2), rgba(255, 238, 203, 0.2));
-  box-shadow:
-    inset 0 0 0 1px rgba(226, 170, 126, 0.28),
-    0 8px 16px rgba(189, 126, 82, 0.08);
-}
-
-.level-label,
-.status-title,
-.status-detail {
-  margin: 0;
-}
-
-.level-label {
-  color: #a25f39;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.status-title {
-  margin-top: 2px;
-  color: #6f3d1d;
-  font-size: 15px;
-  font-weight: 800;
-}
-
-.status-detail {
-  margin-top: 4px;
-  color: #9d633c;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
 .next-level-button {
-  width: 100%;
   appearance: none;
   -webkit-appearance: none;
   border: 0;
@@ -509,7 +478,6 @@ body {
 @media (max-width: 720px) {
   .app {
     width: min(calc(100vh * 9 / 16), calc(100vw - 12px));
-    max-width: none;
     padding: 6px 0;
   }
 
@@ -578,7 +546,13 @@ body {
   }
 
   .move-value {
-    font-size: 30px;
+    font-size: 24px;
+  }
+
+  .next-level-button {
+    min-width: 74px;
+    padding: 8px 12px;
+    font-size: 12px;
   }
 
   .board-shell {
