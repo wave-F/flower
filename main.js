@@ -2,27 +2,64 @@ const COLUMNS = 6;
 const ROWS = 6;
 
 const REMOVE_DURATION = 150;
-const FALL_DURATION = 240;
+const FALL_DURATION = 500;
 const ENTRY_FALL_DURATION = 420;
 const ENTRY_COLUMN_DELAY = 85;
 const MAX_BOARD_GENERATION_ATTEMPTS = 200;
+const MOVE_LIMIT = 10;
 
 const TILE_KINDS = [
-  { key: "amber", label: "amber" },
-  { key: "mint", label: "mint" },
-  { key: "sky", label: "sky" },
-  { key: "violet", label: "violet" },
-  { key: "rose", label: "rose" },
-  { key: "gold", label: "gold" },
+  { key: "amber", label: "Amber", name: "琥珀花" },
+  { key: "mint", label: "Mint", name: "薄荷花" },
+  { key: "sky", label: "Sky", name: "晴空花" },
+  { key: "violet", label: "Violet", name: "紫藤花" },
+  { key: "rose", label: "Rose", name: "玫瑰花" },
+  { key: "gold", label: "Gold", name: "金花" },
+];
+
+const LEVELS = [
+  {
+    id: 1,
+    goals: [
+      { kind: "rose", count: 6 },
+      { kind: "sky", count: 6 },
+    ],
+  },
+  {
+    id: 2,
+    goals: [
+      { kind: "gold", count: 7 },
+      { kind: "mint", count: 8 },
+    ],
+  },
+  {
+    id: 3,
+    goals: [
+      { kind: "amber", count: 8 },
+      { kind: "violet", count: 8 },
+    ],
+  },
 ];
 
 const boardElement = document.getElementById("board");
 const boardShellElement = document.querySelector(".board-shell");
 const tileLayerElement = document.getElementById("tileLayer");
+const levelLabelElement = document.getElementById("levelLabel");
+const levelBadgeElement = document.getElementById("levelBadge");
+const moveLabelElement = document.getElementById("moveLabel");
+const statusTitleElement = document.getElementById("statusTitle");
+const statusDetailElement = document.getElementById("statusDetail");
+const goalListElement = document.getElementById("goalList");
+const nextLevelButtonElement = document.getElementById("nextLevelButton");
 
 let board = [];
 let tileIdSeed = 1;
 let isProcessing = false;
+let isLevelCompleted = false;
+let isLevelFailed = false;
+let currentLevelIndex = 0;
+let goalProgress = {};
+let movesUsed = 0;
 
 const tileElements = new Map();
 const tilePool = [];
@@ -33,6 +70,7 @@ function initialize() {
   fitBoardToViewport();
   renderBoardSlots();
   boardShellElement.addEventListener("click", onBoardClick);
+  nextLevelButtonElement.addEventListener("click", onNextLevelButtonClick);
   window.addEventListener("resize", onViewportResize);
   void resetBoard();
 }
@@ -47,8 +85,9 @@ function fitBoardToViewport() {
   const shellWidth = boardShellElement.clientWidth || 360;
   const shellHeight = boardShellElement.clientHeight || 640;
   const gap = shellWidth <= 360 ? 4 : 6;
-  const usableWidth = shellWidth - 8;
-  const usableHeight = Math.floor(shellHeight * 0.56);
+  const shellInset = shellWidth <= 360 ? 8 : 12;
+  const usableWidth = shellWidth - shellInset;
+  const usableHeight = shellHeight - shellInset;
   const tileSizeByWidth = Math.floor((usableWidth - gap * (COLUMNS - 1)) / COLUMNS);
   const tileSizeByHeight = Math.floor((usableHeight - gap * (ROWS - 1)) / ROWS);
   const tileSize = Math.max(34, Math.min(tileSizeByWidth, tileSizeByHeight));
@@ -80,6 +119,7 @@ async function resetBoard() {
     return;
   }
 
+  prepareLevelState();
   isProcessing = true;
   syncInteractivity();
   setStatus("入场中", "按列从屏幕上方瀑布落入棋盘");
@@ -163,7 +203,7 @@ function randomKind() {
 }
 
 function onBoardClick(event) {
-  if (isProcessing) {
+  if (isProcessing || isLevelCompleted || isLevelFailed) {
     return;
   }
 
@@ -182,13 +222,31 @@ function onBoardClick(event) {
 
 async function processTurn(tile) {
   isProcessing = true;
+  movesUsed += 1;
   syncInteractivity();
-  setStatus("结算中", `删除 ${columnLabel(tile.x)} 列 ${tile.y + 1} 行`);
+  setStatus("结算中", `删除 ${columnLabel(tile.x)} 列 ${tile.y + 1} 行，还剩 ${getRemainingMoves()} 步`);
 
   const initialResult = applyRemovalsAndCollapse([tile]);
+  recordRemovedTiles(initialResult.removedTiles);
   await animateResolution(initialResult);
 
   const cascadeCount = await resolveBoardMatches("本次");
+
+  if (isCurrentLevelComplete()) {
+    isLevelCompleted = true;
+    isProcessing = false;
+    syncInteractivity();
+    setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
+    return;
+  }
+
+  if (movesUsed >= MOVE_LIMIT) {
+    isLevelFailed = true;
+    isProcessing = false;
+    syncInteractivity();
+    setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
+    return;
+  }
 
   isProcessing = false;
   syncInteractivity();
@@ -213,6 +271,7 @@ async function resolveBoardMatches(contextLabel) {
     setStatus("连锁中", `${contextLabel}第 ${cascadeCount} 次消除 ${matchedTiles.length} 个`);
 
     const result = applyRemovalsAndCollapse(matchedTiles);
+    recordRemovedTiles(result.removedTiles);
     await animateResolution(result);
   }
 
@@ -559,14 +618,122 @@ function decorateTileElement(element, tile) {
   element.className = `tile tile--${tile.kind.key}`;
   element.textContent = "";
   element.dataset.tileId = String(tile.id);
-  element.disabled = isProcessing;
-  element.setAttribute("aria-label", `${tile.kind.label} flower tile at column ${tile.x + 1} row ${tile.y + 1}`);
+  element.disabled = isProcessing || isLevelCompleted || isLevelFailed;
+  element.setAttribute("aria-label", `${tile.kind.name}，第 ${tile.x + 1} 列，第 ${tile.y + 1} 行`);
 }
 
 function syncInteractivity() {
   for (const element of tileElements.values()) {
-    element.disabled = isProcessing;
+    element.disabled = isProcessing || isLevelCompleted || isLevelFailed;
   }
+}
+
+function onNextLevelButtonClick() {
+  if (isProcessing || (!isLevelCompleted && !isLevelFailed)) {
+    return;
+  }
+
+  if (isLevelCompleted) {
+    currentLevelIndex = currentLevelIndex < LEVELS.length - 1 ? currentLevelIndex + 1 : 0;
+  }
+
+  void resetBoard();
+}
+
+function prepareLevelState() {
+  isLevelCompleted = false;
+  isLevelFailed = false;
+  goalProgress = Object.fromEntries(getCurrentLevel().goals.map((goal) => [goal.kind, 0]));
+  movesUsed = 0;
+  renderLevelHud();
+}
+
+function recordRemovedTiles(removedTiles) {
+  let hasProgressUpdate = false;
+
+  for (const tile of removedTiles) {
+    if (!(tile.kind.key in goalProgress)) {
+      continue;
+    }
+
+    goalProgress[tile.kind.key] += 1;
+    hasProgressUpdate = true;
+  }
+
+  if (hasProgressUpdate) {
+    renderLevelHud();
+  }
+}
+
+function renderLevelHud() {
+  levelLabelElement.textContent = getCurrentLevelLabel();
+  levelBadgeElement.textContent = String(getCurrentLevel().id);
+  moveLabelElement.textContent = String(getRemainingMoves());
+  renderGoalList();
+  nextLevelButtonElement.hidden = !isLevelCompleted && !isLevelFailed;
+  nextLevelButtonElement.textContent = getActionButtonLabel();
+}
+
+function renderGoalList() {
+  goalListElement.innerHTML = "";
+
+  for (const goal of getCurrentLevel().goals) {
+    const item = document.createElement("li");
+    const progress = Math.min(goalProgress[goal.kind] ?? 0, goal.count);
+    const remaining = Math.max(goal.count - progress, 0);
+    const isComplete = remaining === 0;
+    const kind = getTileKind(goal.kind);
+
+    item.className = isComplete ? "goal-item is-complete" : "goal-item";
+    item.setAttribute("aria-label", `${kind.name}，剩余 ${remaining}，目标 ${goal.count}`);
+
+    const swatch = document.createElement("span");
+    swatch.className = `goal-swatch goal-swatch--${goal.kind}`;
+    swatch.setAttribute("aria-hidden", "true");
+
+    const copy = document.createElement("span");
+    copy.className = "goal-copy";
+
+    const name = document.createElement("span");
+    name.className = "goal-name";
+    name.textContent = kind.name;
+
+    const count = document.createElement("span");
+    count.className = "goal-progress";
+    count.textContent = String(remaining);
+
+    copy.append(name, count);
+    item.append(swatch, copy);
+    goalListElement.appendChild(item);
+  }
+}
+
+function isCurrentLevelComplete() {
+  return getCurrentLevel().goals.every((goal) => (goalProgress[goal.kind] ?? 0) >= goal.count);
+}
+
+function getCurrentLevel() {
+  return LEVELS[currentLevelIndex] ?? LEVELS[0];
+}
+
+function getCurrentLevelLabel() {
+  return `第 ${getCurrentLevel().id} 关`;
+}
+
+function getRemainingMoves() {
+  return Math.max(MOVE_LIMIT - movesUsed, 0);
+}
+
+function getActionButtonLabel() {
+  if (isLevelFailed) {
+    return "重试本关";
+  }
+
+  return currentLevelIndex < LEVELS.length - 1 ? "下一关" : "重新开始";
+}
+
+function getTileKind(kindKey) {
+  return TILE_KINDS.find((kind) => kind.key === kindKey) ?? TILE_KINDS[0];
 }
 
 function toCellKey(x, y) {
@@ -578,6 +745,15 @@ function columnLabel(index) {
 }
 
 function setStatus(title, detail) {
+  if (statusTitleElement) {
+    statusTitleElement.textContent = title;
+  }
+
+  if (statusDetailElement) {
+    statusDetailElement.textContent = detail;
+  }
+
+  renderLevelHud();
   document.title = detail ? `${title} - Grid Fall Prototype` : "Grid Fall Prototype";
 }
 

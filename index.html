@@ -9,7 +9,36 @@
   <body>
     <main class="app">
       <section class="phone-frame">
-        <section>
+        <section class="game-screen">
+          <header class="hud">
+            <div class="hud-bar">
+              <div class="hero-badge" aria-hidden="true">
+                <div class="hero-badge-frame">
+                  <span class="hero-badge-flower"></span>
+                  <span class="hero-badge-caption">关卡</span>
+                  <span id="levelBadge" class="hero-badge-level">1</span>
+                </div>
+              </div>
+              <section class="hud-card hud-card--goals" aria-labelledby="goalPanelTitle">
+                <h2 id="goalPanelTitle" class="hud-card-title">目标</h2>
+                <ul id="goalList" class="goal-list" aria-label="关卡目标"></ul>
+              </section>
+              <section class="hud-card hud-card--moves" aria-labelledby="movePanelTitle">
+                <h2 id="movePanelTitle" class="hud-card-title">步数</h2>
+                <p id="moveLabel" class="move-value">10</p>
+              </section>
+            </div>
+            <div class="hud-footer">
+              <div class="status-panel">
+                <p id="levelLabel" class="level-label">第 1 关</p>
+                <p id="statusTitle" class="status-title">准备中</p>
+                <p id="statusDetail" class="status-detail">关卡载入中</p>
+              </div>
+              <button id="nextLevelButton" class="next-level-button" type="button" hidden>
+                下一关
+              </button>
+            </div>
+          </header>
           <div class="board-shell">
             <div id="board" class="board" aria-label="game board"></div>
             <div id="tileLayer" class="tile-layer" aria-hidden="true"></div>
