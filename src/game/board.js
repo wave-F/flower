@@ -1,5 +1,10 @@
 import { findMatches } from "./match.js";
 
+const FOUR_MATCH_SIZE = 4;
+const FIREWORK_KIND = { key: "firework", label: "Firework", name: "礼花" };
+const FIREWORK_ROW_TYPE = "fireworkRow";
+const FIREWORK_COLUMN_TYPE = "fireworkColumn";
+
 export function createTile(state, x, y, kind) {
   return {
     id: state.tileIdSeed++,
@@ -84,13 +89,25 @@ function createFallbackBoard({ state, columns, rows, tileKinds }) {
   return nextBoard;
 }
 
-export function applyRemovalsAndCollapse({ board, tilesToRemove, tileGroups, columns, rows, state, tileKinds }) {
+export function applyRemovalsAndCollapse({
+  board,
+  tilesToRemove,
+  tileGroups,
+  columns,
+  rows,
+  state,
+  tileKinds,
+  specialCreationContext = null,
+}) {
   const removedTiles = [];
   const removedTileGroups = [];
+  const createdSpecialTiles = [];
+  const triggeredSpecialTiles = [];
   const groupsToRemove = tileGroups ?? [tilesToRemove];
 
   for (const group of groupsToRemove) {
     const removedGroup = [];
+    const specialSourceTile = pickFourMatchSpecialTile(group, specialCreationContext);
 
     for (const tile of group) {
       const currentTile = board[tile.y]?.[tile.x] ?? null;
@@ -101,10 +118,20 @@ export function applyRemovalsAndCollapse({ board, tilesToRemove, tileGroups, col
       board[tile.y][tile.x] = null;
       removedTiles.push(currentTile);
       removedGroup.push(currentTile);
+      if (currentTile.special) {
+        triggeredSpecialTiles.push(currentTile);
+      }
     }
 
     if (removedGroup.length > 0) {
       removedTileGroups.push(removedGroup);
+    }
+
+    if (specialSourceTile && removedGroup.length === FOUR_MATCH_SIZE) {
+      const specialTile = createTile(state, specialSourceTile.x, specialSourceTile.y, FIREWORK_KIND);
+      specialTile.special = { type: getFourMatchFireworkType(group) };
+      board[specialTile.y][specialTile.x] = specialTile;
+      createdSpecialTiles.push({ tile: specialTile, fromRow: specialSourceTile.y });
     }
   }
 
@@ -113,9 +140,69 @@ export function applyRemovalsAndCollapse({ board, tilesToRemove, tileGroups, col
   return {
     removedTiles,
     removedTileGroups,
+    createdSpecialTiles,
+    triggeredSpecialTiles,
     dropped: collapseResult.dropped,
     spawned: collapseResult.spawned,
   };
+}
+
+function pickFourMatchSpecialTile(group, specialCreationContext) {
+  if (group.length !== FOUR_MATCH_SIZE || group.some((tile) => tile.special)) {
+    return null;
+  }
+
+  const movedTileIds = specialCreationContext?.movedTileIds;
+  const movedCandidates = movedTileIds
+    ? group.filter((tile) => movedTileIds.has(tile.id))
+    : [];
+
+  if (movedCandidates.length > 0) {
+    return pickNearestTile(movedCandidates, specialCreationContext?.clickedCell);
+  }
+
+  return pickStableTile(group);
+}
+
+function pickNearestTile(group, cell) {
+  if (!cell) {
+    return pickStableTile(group);
+  }
+
+  return [...group].sort((a, b) => {
+    const distanceA = Math.abs(a.x - cell.x) + Math.abs(a.y - cell.y);
+    const distanceB = Math.abs(b.x - cell.x) + Math.abs(b.y - cell.y);
+    return distanceA - distanceB || b.y - a.y || a.x - b.x;
+  })[0];
+}
+
+function pickStableTile(group) {
+  const centerX = group.reduce((sum, tile) => sum + tile.x, 0) / group.length;
+
+  return [...group].sort((a, b) => {
+    if (a.y !== b.y) {
+      return b.y - a.y;
+    }
+
+    return Math.abs(a.x - centerX) - Math.abs(b.x - centerX);
+  })[0];
+}
+
+function getFourMatchFireworkType(group) {
+  const xs = group.map((tile) => tile.x);
+  const ys = group.map((tile) => tile.y);
+  const width = Math.max(...xs) - Math.min(...xs) + 1;
+  const height = Math.max(...ys) - Math.min(...ys) + 1;
+
+  if (width > height) {
+    return FIREWORK_COLUMN_TYPE;
+  }
+
+  if (height > width) {
+    return FIREWORK_ROW_TYPE;
+  }
+
+  return Math.random() < 0.5 ? FIREWORK_ROW_TYPE : FIREWORK_COLUMN_TYPE;
 }
 
 function collapseBoard({ board, columns, rows, state, tileKinds }) {

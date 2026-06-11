@@ -139,6 +139,7 @@
 - 生成初始棋盘
 - 执行移除、下落、补位
 - `applyRemovalsAndCollapse(...)` 返回 `removedTiles` 和 `removedTileGroups`：前者供总数/兼容逻辑使用，后者保留消除组，供动画按组错峰起飞
+- 精确 4 个普通同色连通块消除时，4 个原 tile 全部正常移除并飞走，同时创建 1 个新的礼花道具；横向形状生成纵向礼花 `special.type = "fireworkColumn"`，纵向形状生成横向礼花 `special.type = "fireworkRow"`，宽高相同则随机
 - 提供按 id 查找 tile 的能力
 
 这是“棋盘数据变化”的核心模块。
@@ -176,6 +177,7 @@
 - `growTileIntoBoard(tileId, { duration, delay, column, row, onArrive })`：开场入场动画使用；tile 固定在最终棋盘格，从 `scale(0)` / 透明状态原地放大淡入，表现成从土里长出来
 - `flyTile(tileId, { duration, targetRect, onArrive })`：统一处理消除后的花朵飞行；目标花传入 `targetRect` 后沿三次贝塞尔曲线收束到 HUD 目标图标，非目标花不传 `targetRect`，沿同一套贝塞尔曲线飞向屏幕外并淡出
 - `flyTileByBezier(...)`：JS 逐帧采样 cubic Bezier，按每朵花随机的控制点、旋转、缩放呼吸感和透明度更新 inline `transform` / `opacity`；用于消除飞出，不再依赖 CSS `transition` 或 `@keyframes` 描述飞行路径
+- `popTile(...)` / `burstTile(...)`：礼花触发专用表现。礼花道具原地放大爆开后消失，不走普通飞花路径；被礼花清除的行/列花朵会沿横向或纵向吹散飞出
 - `liftTileToFlyLayer`：负责把元素接管到浮层并固定像素宽高/位置，避免 HUD 遮挡和棋盘裁切
 - 移入 `#flyLayer` 的目的：飞行花朵需要盖在 HUD 之上且不被 `.board-shell` 的 `overflow:hidden` 裁切（详见下文「飞行层级」）
 - `getBoardMetrics()` 暴露当前棋盘布局快照；入场、下落、补位、resize 批量定位时应复用同一份 metrics，避免每个 tile 都重复触发 `getBoundingClientRect()` / `getComputedStyle()`
@@ -191,9 +193,11 @@
 
 #### `src/ui/hudView.js`
 - 渲染关卡标题、步数、目标列表
+- 关卡徽章统一使用 `hero-badge--no-icon`，只显示关卡数字，不显示花朵图标
 - 更新状态面板文案
 - `showLevelOverlay({ title, detail, actionLabel })` / `hideLevelOverlay()`：在关卡完成或失败时弹出/收起独立的结算覆盖层 `#levelOverlay`（不再把按钮塞在 HUD 里），并设置覆盖层标题、说明与操作按钮文案
 - 目标列表项带 `data-goal-kind`，目标小图标 `.goal-swatch` 复用 `--flower-image` 显示对应花朵图片（不再是纯色点）
+- 目标达成时 `goal-item` 会带 `is-complete`，CSS 会在 `.goal-swatch` 图片右下角叠加绿色对号
 - `getGoalSwatchRect(kind)`：返回某目标花朵图标的视口坐标，供飞行动画作为终点
 - `bumpGoal(kind)`：给对应目标项加上 `is-bumping`，触发数字「跳一下」反馈
 - `renderGoalList(...)` 使用 `DocumentFragment` 批量刷新目标列表，降低 HUD 重绘时的 DOM 插入开销
@@ -256,9 +260,14 @@
     key: string,
     label: string,
     name: string,
+  },
+  special?: {
+    type: "fireworkRow" | "fireworkColumn",
   }
 }
 ```
+
+`special.type = "fireworkRow" | "fireworkColumn"` 表示 4 消生成的礼花道具。它是新创建的 tile，不复用原 4 消中的某朵花；礼花不参与普通同色正交连通检测。玩家点击礼花不消耗步数，`fireworkRow` 清除整行，`fireworkColumn` 清除整列，然后继续执行下落补位与后续连锁。礼花触发时道具本身原地爆开消失，不走普通飞花逻辑；对应行/列上的花会沿礼花方向被吹散。
 
 ### Board
 
@@ -288,6 +297,8 @@
 5. 下落完成后立即检测是否形成连锁，不等待上一批目标花飞行结束
 6. 如果有连锁则继续结算，并继续收集每轮目标花的 `goalFlights`
 7. 所有棋盘连锁结束后，等待已收集的目标花飞行命中，再更新成功/失败状态
+
+精确 4 消的特殊处理：如果某次自动连锁中的消除组由 4 个普通同色 tile 组成，棋盘会先移除全部 4 个原 tile，再创建新的礼花道具。礼花生成槽位优先选择上一轮刚下落/补位且参与该 4 消的 tile 位置；如果有多个候选，则选离本回合玩家点击位置最近的候选；如果没有移动候选，再回退到组内偏下且靠中的稳定位置。礼花方向按 4 消形状决定：横向更多生成纵向清除，纵向更多生成横向清除，宽高相同随机。
 
 连锁循环最多执行 `MAX_CASCADE_COUNT` 次。达到上限后会停止继续自动结算，防止极端随机补位让单回合长时间占用交互流程。
 
@@ -320,7 +331,7 @@
 - `src/game/board.js`：处理特殊块触发后的移除规则
 - `src/ui/animations.js`：补特殊表现
 
-当前版本还没有建立专门的 `specialTiles.js`，因为原型阶段先保证基础连锁稳定。后续如果特殊块变多，再单独拆模块。
+当前已内联支持 4 消礼花 `fireworkRow` / `fireworkColumn`，尚未建立专门的 `specialTiles.js`。后续如果特殊块变多，再单独拆模块。
 
 ### 新增道具 Add Boosters
 

@@ -133,6 +133,78 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     });
   }
 
+  function popTile(tileId, { duration, onArrive } = {}) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      onArrive?.();
+      return;
+    }
+
+    tileElements.delete(tileId);
+    element.disabled = true;
+    element.classList.add("is-popping");
+
+    const animation = element.animate([
+      { opacity: 1, transform: "scale(1)" },
+      { opacity: 1, transform: "scale(1.32)", offset: 0.48 },
+      { opacity: 0, transform: "scale(0.18) rotate(18deg)" },
+    ], {
+      duration,
+      easing: "cubic-bezier(0.2, 0.9, 0.2, 1)",
+      fill: "both",
+    });
+
+    animation.finished.then(() => {
+      animation.cancel();
+      releaseTileElement(element);
+      onArrive?.();
+    }).catch(() => {
+      releaseTileElement(element);
+      onArrive?.();
+    });
+  }
+
+  function burstTile(tileId, { duration, directionX, directionY, onArrive } = {}) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      onArrive?.();
+      return;
+    }
+
+    tileElements.delete(tileId);
+    const startRect = liftTileToFlyLayer(element);
+    const distance = startRect.width * (2.2 + Math.random() * 0.7);
+    const drift = startRect.width * (Math.random() - 0.5) * 0.52;
+    const normalized = normalizeDirection(directionX, directionY);
+    const endX = normalized.x * distance + -normalized.y * drift;
+    const endY = normalized.y * distance + normalized.x * drift;
+    const rotation = (Math.random() < 0.5 ? -1 : 1) * (120 + Math.random() * 120);
+
+    const animation = element.animate([
+      { opacity: 1, transform: "translate(0, 0) scale(1) rotate(0deg)" },
+      { opacity: 0.92, transform: `translate(${endX * 0.38}px, ${endY * 0.38}px) scale(1.08) rotate(${rotation * 0.35}deg)`, offset: 0.34 },
+      { opacity: 0, transform: `translate(${endX}px, ${endY}px) scale(0.38) rotate(${rotation}deg)` },
+    ], {
+      duration,
+      easing: "cubic-bezier(0.12, 0.72, 0.22, 1)",
+      fill: "both",
+    });
+
+    animation.finished.then(() => {
+      animation.cancel();
+      releaseTileElement(element);
+      onArrive?.();
+    }).catch(() => {
+      releaseTileElement(element);
+      onArrive?.();
+    });
+  }
+
+  function normalizeDirection(x, y) {
+    const length = Math.hypot(x, y) || 1;
+    return { x: x / length, y: y / length };
+  }
+
   function flyTileByBezier(element, startRect, {
     duration,
     delay = 0,
@@ -317,16 +389,37 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.style.removeProperty("transition-delay");
     element.removeAttribute("aria-label");
     delete element.dataset.tileId;
+    delete element.dataset.specialType;
     tilePool.push(element);
   }
 
   function decorateTileElement(element, tile) {
     element.type = "button";
     element.className = `tile tile--${tile.kind.key}`;
+    if (tile.special?.type) {
+      element.classList.add("tile--special", `tile--special-${tile.special.type}`);
+      element.dataset.specialType = tile.special.type;
+    } else {
+      delete element.dataset.specialType;
+    }
+
     element.textContent = "";
     element.dataset.tileId = String(tile.id);
     element.disabled = getInteractionDisabled();
-    element.setAttribute("aria-label", `${tile.kind.name}，第 ${tile.x + 1} 列，第 ${tile.y + 1} 行`);
+    const specialLabel = getSpecialTileLabel(tile.special?.type);
+    element.setAttribute("aria-label", `${specialLabel}${tile.kind.name}，第 ${tile.x + 1} 列，第 ${tile.y + 1} 行`);
+  }
+
+  function getSpecialTileLabel(type) {
+    if (type === "fireworkRow") {
+      return "横向礼花，";
+    }
+
+    if (type === "fireworkColumn") {
+      return "纵向礼花，";
+    }
+
+    return "";
   }
 
   function setTileStagePosition(element, left, top) {
@@ -349,6 +442,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
 
   return {
     clearAllTiles,
+    burstTile,
     flyTile,
     getTileElement,
     growTileIntoBoard,
@@ -356,6 +450,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     mountSpawnedTile,
     mountTileForEntry,
     refreshTilePositions,
+    popTile,
     setTileBoardPosition,
     syncInteractivity,
     unmountTile,

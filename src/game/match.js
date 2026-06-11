@@ -11,7 +11,7 @@ export function findMatchGroups(boardState, columns, rows) {
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < columns; x += 1) {
       const tile = boardState[y]?.[x] ?? null;
-      if (!tile) {
+      if (!tile || tile.special) {
         continue;
       }
 
@@ -34,7 +34,7 @@ export function findMatchGroups(boardState, columns, rows) {
 
 function collectConnectedGroup(boardState, startX, startY, columns, rows, visited) {
   const startTile = boardState[startY]?.[startX] ?? null;
-  if (!startTile) {
+  if (!startTile || startTile.special) {
     return [];
   }
 
@@ -49,7 +49,7 @@ function collectConnectedGroup(boardState, startX, startY, columns, rows, visite
     }
 
     const tile = boardState[cell.y]?.[cell.x] ?? null;
-    if (!tile || tile.kind.key !== startTile.kind.key) {
+    if (!tile || tile.special || tile.kind.key !== startTile.kind.key) {
       continue;
     }
 

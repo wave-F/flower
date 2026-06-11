@@ -273,7 +273,6 @@ body {
 
 .goal-item.is-complete {
   filter: saturate(0.78);
-  opacity: 0.82;
 }
 
 .goal-item.is-bumping {
@@ -294,10 +293,32 @@ body {
 
 .goal-swatch {
   --flower-image: url("./assets/flowers/flower_5.png");
+  position: relative;
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
   background: center / contain no-repeat var(--flower-image);
+}
+
+.goal-item.is-complete .goal-swatch::after {
+  content: "✓";
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #56d66f 0%, #1fa84a 100%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 1000;
+  line-height: 1;
+  box-shadow:
+    0 0 0 2px #fff8ef,
+    0 4px 8px rgba(31, 104, 47, 0.28);
+  text-shadow: 0 1px 0 rgba(0, 80, 20, 0.25);
 }
 
 .goal-swatch--amber {
@@ -548,11 +569,38 @@ body {
   transition: transform 140ms ease;
 }
 
+.tile--special::before {
+  inset: 50% auto auto 50%;
+  width: 82%;
+  height: 82%;
+  background: center / contain no-repeat url("./assets/item_1.png");
+  transform: translate(-50%, -50%);
+  transform-origin: 50% 50%;
+  filter:
+    drop-shadow(0 0 7px rgba(255, 239, 146, 0.95))
+    drop-shadow(0 5px 8px rgba(110, 61, 25, 0.25));
+}
+
+.tile--special {
+  transition:
+    top 500ms cubic-bezier(0.18, 0.7, 0.28, 1),
+    opacity 220ms ease,
+    transform 280ms cubic-bezier(0.18, 0.92, 0.22, 1);
+}
+
+.tile--special::after {
+  content: none;
+}
+
+.tile--special-fireworkColumn::before {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
 .tile.no-transition {
   transition: none;
 }
 
-.tile:not(:disabled):not(.is-flying):not(.is-growing):hover::before {
+.tile:not(.tile--special):not(:disabled):not(.is-flying):not(.is-growing):hover::before {
   animation: flower-wobble 320ms ease-out 1;
 }
 
@@ -592,7 +640,17 @@ body {
   opacity: 0.3;
 }
 
+.tile--special.is-spawning {
+  --tile-scale: 0;
+  opacity: 0;
+}
+
 .tile.is-growing {
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.tile.is-popping {
   pointer-events: none;
   will-change: transform, opacity;
 }

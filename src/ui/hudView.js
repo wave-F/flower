@@ -5,14 +5,9 @@ export function createHudView({ elements, appTitle }) {
     elements.levelBadgeElement.textContent = String(level.id);
     elements.moveLabelElement.textContent = String(Math.max(level.moveLimit - movesUsed, 0));
     
-    // Level 1 specific styling: hide icon
     const heroBadge = elements.levelBadgeElement.closest(".hero-badge");
     if (heroBadge) {
-      if (level.id === 1) {
-        heroBadge.classList.add("hero-badge--no-icon");
-      } else {
-        heroBadge.classList.remove("hero-badge--no-icon");
-      }
+      heroBadge.classList.add("hero-badge--no-icon");
     }
 
     renderGoalList(level.goals, goalProgress);

@@ -41,6 +41,9 @@ const FIRST_LEVEL_TUTORIAL = {
   tip: "点击拔出，下落花朵三连消除！",
 };
 
+const FIREWORK_ROW_TYPE = "fireworkRow";
+const FIREWORK_COLUMN_TYPE = "fireworkColumn";
+
 export function initialize(doc = globalThis.document) {
   if (!doc) {
     return null;
@@ -232,6 +235,12 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
+    if (isFireworkTile(tile)) {
+      hideTutorialGuide();
+      void processFirework(tile);
+      return;
+    }
+
     hideTutorialGuide();
 
     void processTurn(tile);
@@ -313,6 +322,7 @@ export function initialize(doc = globalThis.document) {
   async function processTurn(tile) {
     state.isProcessing = true;
     state.movesUsed += 1;
+    const clickedCell = { x: tile.x, y: tile.y };
     renderHud();
     tileView.syncInteractivity();
 
@@ -341,7 +351,7 @@ export function initialize(doc = globalThis.document) {
       onGoalArrive: handleGoalArrive,
     });
 
-    const cascadeResult = await resolveBoardMatches("本次");
+    const cascadeResult = await resolveBoardMatches("本次", { clickedCell, previousResult: initialResult });
     await Promise.all([
       initialResolution.goalFlights,
       ...cascadeResult.goalFlights,
@@ -386,7 +396,73 @@ export function initialize(doc = globalThis.document) {
     }
   }
 
-  async function resolveBoardMatches(contextLabel) {
+  async function processFirework(tile) {
+    state.isProcessing = true;
+    renderHud();
+    tileView.syncInteractivity();
+
+    const { columns, rows, tileKinds } = getCurrentLevelSettings();
+    const clickedCell = { x: tile.x, y: tile.y };
+    const targets = getFireworkTargets(tile, columns, rows);
+    const directionLabel = tile.special.type === FIREWORK_ROW_TYPE ? "横向" : "纵向";
+    hudView.setStatus("礼花触发", `${directionLabel}礼花清除 ${targets.length} 个格子`);
+
+    const result = applyRemovalsAndCollapse({
+      board: state.board,
+      tilesToRemove: targets,
+      columns,
+      rows,
+      state,
+      tileKinds,
+    });
+    result.fireworkEffect = {
+      type: tile.special.type,
+      originX: tile.x,
+      originY: tile.y,
+    };
+    const resolution = await animateResolution({
+      result,
+      tileView,
+      removeDuration: REMOVE_DURATION,
+      fallDuration: FALL_DURATION,
+      flyDuration: FLY_DURATION,
+      isGoalKind,
+      getGoalRect: hudView.getGoalSwatchRect,
+      onGoalArrive: handleGoalArrive,
+    });
+
+    const cascadeResult = await resolveBoardMatches("礼花", { clickedCell, previousResult: result });
+    await Promise.all([
+      resolution.goalFlights,
+      ...cascadeResult.goalFlights,
+    ]);
+
+    if (isCurrentLevelComplete(state, getCurrentLevel())) {
+      state.isLevelCompleted = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
+      hudView.showLevelOverlay({
+        title: "关卡完成",
+        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    state.isProcessing = false;
+    tileView.syncInteractivity();
+    renderHud();
+
+    if (cascadeResult.cascadeCount > 0) {
+      hudView.setStatus("就绪", `礼花触发 ${cascadeResult.cascadeCount} 次连锁`);
+    } else {
+      hudView.setStatus("就绪", "礼花未形成后续连通块消除");
+    }
+  }
+
+  async function resolveBoardMatches(contextLabel, { clickedCell, previousResult = null } = {}) {
     let cascadeCount = 0;
     const goalFlights = [];
     const { columns, rows, tileKinds } = getCurrentLevelSettings();
@@ -409,7 +485,9 @@ export function initialize(doc = globalThis.document) {
         rows,
         state,
         tileKinds,
+        specialCreationContext: createSpecialCreationContext(previousResult, clickedCell),
       });
+      previousResult = result;
       const resolution = await animateResolution({
         result,
         tileView,
@@ -428,6 +506,48 @@ export function initialize(doc = globalThis.document) {
     }
 
     return { cascadeCount, goalFlights };
+  }
+
+  function createSpecialCreationContext(previousResult, clickedCell) {
+    if (!previousResult) {
+      return { clickedCell, movedTileIds: new Set() };
+    }
+
+    return {
+      clickedCell,
+      movedTileIds: new Set([
+        ...(previousResult.dropped ?? []).map((move) => move.tile.id),
+        ...(previousResult.spawned ?? []).map((spawn) => spawn.tile.id),
+        ...(previousResult.createdSpecialTiles ?? []).map((created) => created.tile.id),
+      ]),
+    };
+  }
+
+  function isFireworkTile(tile) {
+    return tile.special?.type === FIREWORK_ROW_TYPE || tile.special?.type === FIREWORK_COLUMN_TYPE;
+  }
+
+  function getFireworkTargets(tile, columns, rows) {
+    const targets = [];
+
+    if (tile.special.type === FIREWORK_ROW_TYPE) {
+      for (let x = 0; x < columns; x += 1) {
+        const target = state.board[tile.y]?.[x] ?? null;
+        if (target) {
+          targets.push(target);
+        }
+      }
+      return targets;
+    }
+
+    for (let y = 0; y < rows; y += 1) {
+      const target = state.board[y]?.[tile.x] ?? null;
+      if (target) {
+        targets.push(target);
+      }
+    }
+
+    return targets;
   }
 
   function onNextLevelButtonClick() {
