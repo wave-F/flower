@@ -1,0 +1,222 @@
+:root {
+  color-scheme: light;
+  --bg: #fff4e8;
+  --board-columns: 6;
+  --board-rows: 6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 210, 168, 0.68), transparent 28%),
+    radial-gradient(circle at 82% 22%, rgba(255, 184, 197, 0.52), transparent 26%),
+    radial-gradient(circle at 50% 82%, rgba(255, 229, 157, 0.4), transparent 30%),
+    linear-gradient(180deg, #fff8f1 0%, #ffeede 52%, #ffdcbc 100%);
+}
+
+.app {
+  width: min(calc(100vh * 9 / 16), calc(100vw - 12px));
+  max-width: 460px;
+  padding: 6px 0;
+}
+
+.phone-frame {
+  position: relative;
+  display: flex;
+  aspect-ratio: 9 / 16;
+  width: 100%;
+  padding: 0;
+  border-radius: 36px;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.58), transparent 30%),
+    linear-gradient(180deg, rgba(255, 249, 240, 0.98), rgba(255, 232, 212, 0.96)),
+    linear-gradient(135deg, rgba(255, 198, 181, 0.18), rgba(255, 221, 160, 0.14));
+  border: 1px solid rgba(227, 173, 132, 0.45);
+  box-shadow:
+    0 24px 90px rgba(180, 110, 67, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+}
+
+.phone-frame > section {
+  flex: 1;
+  display: flex;
+}
+
+.board-shell {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 4px;
+  overflow: hidden;
+}
+
+.board-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(255, 233, 190, 0.32), transparent 34%),
+    radial-gradient(circle at 20% 30%, rgba(255, 195, 214, 0.16), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26), transparent 30%);
+  pointer-events: none;
+}
+
+.board {
+  --tile-size: 52px;
+  --gap: 6px;
+  position: relative;
+  z-index: 1;
+  width: calc(var(--board-columns) * var(--tile-size) + (var(--board-columns) - 1) * var(--gap));
+  height: calc(var(--board-rows) * var(--tile-size) + (var(--board-rows) - 1) * var(--gap));
+  margin: 0 auto;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.58), transparent 34%),
+    linear-gradient(180deg, #fff5e7 0%, #ffe5c9 100%),
+    linear-gradient(135deg, rgba(255, 214, 188, 0.3), rgba(255, 238, 203, 0.24));
+  box-shadow:
+    inset 0 0 0 1px rgba(226, 170, 126, 0.34),
+    0 22px 44px rgba(189, 126, 82, 0.18);
+  overflow: visible;
+}
+
+.slot {
+  position: absolute;
+  width: var(--tile-size);
+  height: var(--tile-size);
+  border-radius: 18px;
+  background: transparent;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.52), transparent 34%),
+    linear-gradient(180deg, rgba(255, 240, 221, 0.88), rgba(255, 223, 194, 0.84));
+  box-shadow:
+    inset 0 0 0 1px rgba(233, 184, 143, 0.35),
+    inset 0 -10px 18px rgba(236, 170, 124, 0.14);
+}
+
+.tile-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.tile {
+  --tile-scale: 1;
+  --flower-image: url("./assets/flowers/flower-rose.svg");
+  --flower-brightness: 1;
+  position: absolute;
+  pointer-events: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  left: 0;
+  top: 0;
+  width: var(--tile-size);
+  height: var(--tile-size);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 20px;
+  color: transparent;
+  font: inherit;
+  cursor: pointer;
+  transform: scale(var(--tile-scale));
+  transition:
+    top 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease,
+    transform 140ms ease,
+    filter 140ms ease;
+}
+
+.tile::before {
+  content: "";
+  position: absolute;
+  inset: -4%;
+  background: center / contain no-repeat var(--flower-image);
+  filter: brightness(var(--flower-brightness));
+  transition:
+    transform 140ms ease,
+    filter 140ms ease;
+}
+
+.tile.no-transition {
+  transition: none;
+}
+
+.tile:hover {
+  --flower-brightness: 1.06;
+}
+
+.tile:disabled {
+  cursor: default;
+}
+
+.tile:focus-visible {
+  outline: 2px solid rgba(200, 109, 65, 0.55);
+  outline-offset: 2px;
+}
+
+.tile.is-removing {
+  --tile-scale: 0.5;
+  opacity: 0;
+}
+
+.tile.is-spawning {
+  opacity: 0.3;
+}
+
+.tile.is-entering {
+  transition-duration: 420ms, 140ms, 140ms, 140ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1), ease, ease, ease;
+}
+
+.tile--amber {
+  --flower-image: url("./assets/flowers/flower-amber.svg");
+}
+
+.tile--mint {
+  --flower-image: url("./assets/flowers/flower-mint.svg");
+}
+
+.tile--sky {
+  --flower-image: url("./assets/flowers/flower-sky.svg");
+}
+
+.tile--violet {
+  --flower-image: url("./assets/flowers/flower-violet.svg");
+}
+
+.tile--rose {
+  --flower-image: url("./assets/flowers/flower-rose.svg");
+}
+
+.tile--gold {
+  --flower-image: url("./assets/flowers/flower-gold.svg");
+}
+
+@media (max-width: 720px) {
+  .app {
+    width: min(calc(100vh * 9 / 16), calc(100vw - 12px));
+    padding: 6px 0;
+  }
+
+  .phone-frame {
+    border-radius: 28px;
+  }
+
+  .board-shell {
+    padding: 14px 2px;
+  }
+}
