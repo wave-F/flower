@@ -35,6 +35,38 @@ export function createBoard({ state, columns, rows, tileKinds, maxAttempts }) {
   return createFallbackBoard({ state, columns, rows, tileKinds });
 }
 
+export function createFixedBoard({ state, layout, tileKindMap }) {
+  const nextBoard = [];
+  // 定义数字到 Key 的映射
+  const numToKey = {
+    0: "grass",  // 杂草
+    1: "amber",  // 橙色
+    2: "mint",   // 粉色
+    3: "sky",    // 黄色
+    4: "violet", // 红色
+    5: "rose",   // 蓝色
+    6: "gold",   // 紫色
+    7: "green"   // 绿色
+  };
+
+  for (let y = 0; y < layout.length; y += 1) {
+    const row = [];
+    for (let x = 0; x < layout[y].length; x += 1) {
+      let kindKey = layout[y][x];
+      // 如果是数字，转换成字符串 Key
+      if (typeof kindKey === "number") {
+        kindKey = numToKey[kindKey] ?? "rose";
+      }
+      
+      const kind = tileKindMap[kindKey] ?? Object.values(tileKindMap)[0];
+      row.push(createTile(state, x, y, kind));
+    }
+    nextBoard.push(row);
+  }
+
+  return nextBoard;
+}
+
 function createFallbackBoard({ state, columns, rows, tileKinds }) {
   const nextBoard = [];
 

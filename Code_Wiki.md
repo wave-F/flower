@@ -71,6 +71,7 @@
 #### `index.html`
 - 页面入口
 - 提供 HUD、棋盘容器、关卡结算覆盖层 `#levelOverlay`（内含「下一关 / 重试」按钮 `#nextLevelButton`）
+- 提供新手引导层 `#tutorialGuide`，包含手指图片 `#tutorialHand` 和提示文案 `#tutorialTip`
 - 顶层飞行浮层 `#flyLayer`：作为 `.phone-frame` 的直接子级，专门承载「飞向目标」的花朵，使其层级高于 HUD（详见「飞行层级」）
 - 通过 `<script type="module">` 加载 `src/main.js`
 
@@ -91,26 +92,40 @@
 - 初始化 DOM、状态、视图模块
 - 监听点击、resize、orientationchange
 - 驱动整局流程：点击 -> 移除 -> 掉落 -> 连锁 -> 成功/失败判定
+- 管理第 1 关新手引导：开场入场动画结束后，引导玩家点击 0-based 坐标 `(2, 2)` 的杂草；点击其他 tile 会被忽略，点击目标后隐藏引导并正常结算
 
 ### `src/config/`
 
 #### `src/config/constants.js`
-- 棋盘大小 `COLUMNS` / `ROWS`
 - 动画时间常量
-- 步数限制 `MOVE_LIMIT`
+- 连锁安全上限 `MAX_CASCADE_COUNT`，避免极端随机补位导致单回合长时间无限结算
 - 应用标题 `APP_TITLE`
 
 #### `src/config/tileKinds.js`
 - 定义所有可随机生成的 tile 类型 `TILE_KINDS`
-- 普通花朵资源当前按 `TILE_KINDS` 顺序映射到 `assets/flowers/flower_1.png` ~ `flower_6.png`：`amber`、`mint`、`sky`、`violet`、`rose`、`gold`
-- `grass` 使用 `assets/grass.png`，和普通花一样参与随机生成、点击移除、下落补位与同类连通块消除
+- 普通花朵资源当前映射到 `assets/flowers/flower_1.png` ~ `flower_7.png`：橙色、粉色、黄色、红色、蓝色、紫色、绿色
+- `grass` 使用 `assets/grass.png`，当前所有关卡的 `tileKinds` 都包含它；它作为干扰块参与随机生成、点击移除、下落补位与同类连通块消除
 - `grass` 不写入 `src/config/levels.js` 的 `goals`，因此不会作为关卡目标，也不会计入目标进度
 - 提供按 `key` 查询的 `TILE_KIND_MAP`
 
 #### `src/config/levels.js`
 - 定义关卡列表 `LEVELS`
-- 每关的目标花朵种类与数量
-
+- 全数字驱动配置：
+  - **0**: 杂草 (grass)
+  - **1**: 橙色 (flower_1)
+  - **2**: 粉色 (flower_2)
+  - **3**: 黄色 (flower_3)
+  - **4**: 红色 (flower_4)
+  - **5**: 蓝色 (flower_5)
+  - **6**: 紫色 (flower_6)
+  - **7**: 绿色 (flower_7)
+- 每关的棋盘大小 `columns` / `rows`
+- 每关的步数限制 `moveLimit`
+- 每关的颜色池 `tileKinds` (使用数字 ID)
+- 每关的固定开局布局 `initialBoard` (可选，使用数字 ID)
+- 每关的目标花朵种类与数量 `goals` (使用数字 ID)
+- 当前关卡尺寸递进：`5x5` -> `6x6` -> `7x7` -> `8x8` -> `8x9` -> `8x10`；宽度上限为 `8`，高度上限为 `10`
+- 后续关卡主要通过增加目标种类、提高目标数量、适当增加步数来提高难度
 ### `src/state/`
 
 #### `src/state/gameState.js`
@@ -145,13 +160,14 @@
 ### `src/ui/`
 
 #### `src/ui/dom.js`
-- 集中获取页面上必须存在的 DOM 节点（含棋盘、tile 层、目标列表、以及顶层飞行浮层 `#flyLayer`）
+- 集中获取页面上必须存在的 DOM 节点（含棋盘、tile 层、目标列表、顶层飞行浮层 `#flyLayer`、新手引导层 `#tutorialGuide`）
 - 如果关键节点缺失，尽早报错
 
 #### `src/ui/boardLayout.js`
 - 根据视口大小计算棋盘布局
 - 设置 CSS 变量 `--tile-size` / `--gap`
 - 管理棋盘槽位生成；`.slot` 只做不可见占位，棋盘底部的连续横纵网格线由 `.board::before` 绘制，用来轻微标出格子
+- `renderBoardSlots(...)` 使用 `DocumentFragment` 批量插入槽位，减少 resize 时的 DOM 写入次数
 
 #### `src/ui/tileView.js`
 - 管理 tile DOM 元素的创建、复用、销毁
@@ -162,6 +178,7 @@
 - `flyTileByBezier(...)`：JS 逐帧采样 cubic Bezier，按每朵花随机的控制点、旋转、缩放呼吸感和透明度更新 inline `transform` / `opacity`；用于消除飞出，不再依赖 CSS `transition` 或 `@keyframes` 描述飞行路径
 - `liftTileToFlyLayer`：负责把元素接管到浮层并固定像素宽高/位置，避免 HUD 遮挡和棋盘裁切
 - 移入 `#flyLayer` 的目的：飞行花朵需要盖在 HUD 之上且不被 `.board-shell` 的 `overflow:hidden` 裁切（详见下文「飞行层级」）
+- `getBoardMetrics()` 暴露当前棋盘布局快照；入场、下落、补位、resize 批量定位时应复用同一份 metrics，避免每个 tile 都重复触发 `getBoundingClientRect()` / `getComputedStyle()`
 
 #### `src/ui/animations.js`
 - 负责移除、下落、补位、整盘入场的动画时序
@@ -170,6 +187,7 @@
 - 消除时目标花和非目标花都调用 `tileView.flyTile()`：目标花传 `targetRect` 并在命中时通过 `onGoalArrive` 回调通知上层更新进度；非目标花不传 `targetRect`，只做飞散视觉，不更新进度
 - `GROUP_FLY_STAGGER = 120`：一次结算中如果有多个消除组，会按组错峰启动飞行；下落补位会等到最后一组开始飞之后再执行，避免还没起飞的花被补位视觉覆盖
 - `animateResolution` 在移除和下落完成后就返回 `{ goalFlights }`，不会等待目标花飞行结束；主流程收集这些 Promise，让后续连锁可以在上一批飞行期间继续触发，最后在成功/失败判定前统一等待目标花命中，保证目标进度完整
+- 入场和下落动画会先获取一次棋盘 metrics，再传给 `tileView` 批量定位，避免同一轮动画中重复读取布局
 
 #### `src/ui/hudView.js`
 - 渲染关卡标题、步数、目标列表
@@ -178,6 +196,7 @@
 - 目标列表项带 `data-goal-kind`，目标小图标 `.goal-swatch` 复用 `--flower-image` 显示对应花朵图片（不再是纯色点）
 - `getGoalSwatchRect(kind)`：返回某目标花朵图标的视口坐标，供飞行动画作为终点
 - `bumpGoal(kind)`：给对应目标项加上 `is-bumping`，触发数字「跳一下」反馈
+- `renderGoalList(...)` 使用 `DocumentFragment` 批量刷新目标列表，降低 HUD 重绘时的 DOM 插入开销
 
 ### `src/utils/`
 
@@ -269,6 +288,8 @@
 5. 下落完成后立即检测是否形成连锁，不等待上一批目标花飞行结束
 6. 如果有连锁则继续结算，并继续收集每轮目标花的 `goalFlights`
 7. 所有棋盘连锁结束后，等待已收集的目标花飞行命中，再更新成功/失败状态
+
+连锁循环最多执行 `MAX_CASCADE_COUNT` 次。达到上限后会停止继续自动结算，防止极端随机补位让单回合长时间占用交互流程。
 
 注意：目标进度不再在动画前一次性写入，而是由 `main.js` 的 `handleGoalArrive(tile)` 在每朵目标花飞行命中时逐朵累加并刷新 HUD。`recordRemovedTiles` 已不再被主流程调用（单朵记录逻辑内联在 `handleGoalArrive`）。
 

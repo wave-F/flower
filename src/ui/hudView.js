@@ -1,9 +1,20 @@
 import { TILE_KIND_MAP } from "../config/tileKinds.js";
 
-export function createHudView({ elements, moveLimit, appTitle }) {
+export function createHudView({ elements, appTitle }) {
   function renderLevelHud({ level, movesUsed, goalProgress }) {
     elements.levelBadgeElement.textContent = String(level.id);
-    elements.moveLabelElement.textContent = String(Math.max(moveLimit - movesUsed, 0));
+    elements.moveLabelElement.textContent = String(Math.max(level.moveLimit - movesUsed, 0));
+    
+    // Level 1 specific styling: hide icon
+    const heroBadge = elements.levelBadgeElement.closest(".hero-badge");
+    if (heroBadge) {
+      if (level.id === 1) {
+        heroBadge.classList.add("hero-badge--no-icon");
+      } else {
+        heroBadge.classList.remove("hero-badge--no-icon");
+      }
+    }
+
     renderGoalList(level.goals, goalProgress);
   }
 
@@ -24,6 +35,7 @@ export function createHudView({ elements, moveLimit, appTitle }) {
 
   function renderGoalList(goals, goalProgress) {
     elements.goalListElement.innerHTML = "";
+    const fragment = document.createDocumentFragment();
 
     for (const goal of goals) {
       const item = document.createElement("li");
@@ -51,8 +63,10 @@ export function createHudView({ elements, moveLimit, appTitle }) {
 
       copy.append(name, count);
       item.append(swatch, copy);
-      elements.goalListElement.appendChild(item);
+      fragment.appendChild(item);
     }
+
+    elements.goalListElement.appendChild(fragment);
   }
 
   function getGoalSwatchRect(kind) {

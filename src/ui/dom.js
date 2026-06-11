@@ -21,5 +21,8 @@ export function getDomElements(doc = document) {
     levelOverlayTitleElement: requireElement(doc, "#levelOverlayTitle"),
     levelOverlayDetailElement: requireElement(doc, "#levelOverlayDetail"),
     fpsCounterElement: requireElement(doc, "#fpsCounter"),
+    tutorialGuideElement: requireElement(doc, "#tutorialGuide"),
+    tutorialHandElement: requireElement(doc, "#tutorialHand"),
+    tutorialTipElement: requireElement(doc, "#tutorialTip"),
   };
 }

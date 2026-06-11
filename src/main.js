@@ -1,18 +1,16 @@
 import {
   APP_TITLE,
-  COLUMNS,
   ENTRY_GROW_DURATION,
   ENTRY_TILE_DELAY,
   FALL_DURATION,
   FLY_DURATION,
   MAX_BOARD_GENERATION_ATTEMPTS,
-  MOVE_LIMIT,
+  MAX_CASCADE_COUNT,
   REMOVE_DURATION,
-  ROWS,
 } from "./config/constants.js";
 import { LEVELS } from "./config/levels.js";
-import { TILE_KINDS } from "./config/tileKinds.js";
-import { applyRemovalsAndCollapse, createBoard, findTileById } from "./game/board.js";
+import { TILE_KIND_MAP } from "./config/tileKinds.js";
+import { applyRemovalsAndCollapse, createBoard, createFixedBoard, findTileById } from "./game/board.js";
 import { isCurrentLevelComplete, getRemainingMoves, prepareLevelState } from "./game/levelProgress.js";
 import { findMatchGroups } from "./game/match.js";
 import { createGameState } from "./state/gameState.js";
@@ -23,6 +21,26 @@ import { getDomElements } from "./ui/dom.js";
 import { createHudView } from "./ui/hudView.js";
 import { createTileView } from "./ui/tileView.js";
 
+// 关卡配置数字映射表。放在模块顶层，避免 initialize 早期读取时触发 TDZ。
+const NUM_TO_TILE_KEY = {
+  0: "grass", // 杂草
+  1: "amber", // 橙色
+  2: "mint", // 粉色
+  3: "sky", // 黄色
+  4: "violet", // 红色
+  5: "rose", // 蓝色
+  6: "gold", // 紫色
+  7: "green", // 绿色
+};
+
+const FIRST_LEVEL_TUTORIAL = {
+  levelId: 1,
+  x: 2,
+  y: 2,
+  kind: "grass",
+  tip: "点击拔出，下落花朵三连消除！",
+};
+
 export function initialize(doc = globalThis.document) {
   if (!doc) {
     return null;
@@ -32,7 +50,6 @@ export function initialize(doc = globalThis.document) {
   const state = createGameState();
   const hudView = createHudView({
     elements,
-    moveLimit: MOVE_LIMIT,
     appTitle: APP_TITLE,
   });
   const tileView = createTileView({
@@ -42,15 +59,17 @@ export function initialize(doc = globalThis.document) {
     boardShellElement: elements.boardShellElement,
     getInteractionDisabled: () => state.isProcessing || state.isLevelCompleted || state.isLevelFailed,
   });
+  let isTutorialVisible = false;
 
+  const { columns: initialCols, rows: initialRows } = getCurrentLevelSettings();
   fitBoardToViewport({
     boardElement: elements.boardElement,
     boardShellElement: elements.boardShellElement,
     tileLayerElement: elements.tileLayerElement,
-    columns: COLUMNS,
-    rows: ROWS,
+    columns: initialCols,
+    rows: initialRows,
   });
-  renderBoardSlots({ boardElement: elements.boardElement, columns: COLUMNS, rows: ROWS });
+  renderBoardSlots({ boardElement: elements.boardElement, columns: initialCols, rows: initialRows });
 
   elements.boardShellElement.addEventListener("click", onBoardClick);
   elements.nextLevelButtonElement.addEventListener("click", onNextLevelButtonClick);
@@ -82,16 +101,42 @@ export function initialize(doc = globalThis.document) {
     requestAnimationFrame(update);
   }
 
+  function getCurrentLevel() {
+    const rawLevel = LEVELS[state.currentLevelIndex] ?? LEVELS[0];
+    // 确保返回的是处理过数字 ID 的关卡对象
+    return {
+      ...rawLevel,
+      tileKinds: rawLevel.tileKinds.map(item => typeof item === "number" ? NUM_TO_TILE_KEY[item] : item),
+      goals: rawLevel.goals.map(goal => ({
+        ...goal,
+        kind: typeof goal.kind === "number" ? NUM_TO_TILE_KEY[goal.kind] : goal.kind
+      }))
+    };
+  }
+
+  function getCurrentLevelSettings() {
+    const level = getCurrentLevel();
+    return {
+      level,
+      columns: level.columns,
+      rows: level.rows,
+      moveLimit: level.moveLimit,
+      tileKinds: level.tileKinds.map(key => TILE_KIND_MAP[key] ?? TILE_KIND_MAP["rose"]),
+    };
+  }
+
   function onViewportResize() {
+    const { columns, rows } = getCurrentLevelSettings();
     fitBoardToViewport({
       boardElement: elements.boardElement,
       boardShellElement: elements.boardShellElement,
       tileLayerElement: elements.tileLayerElement,
-      columns: COLUMNS,
-      rows: ROWS,
+      columns,
+      rows,
     });
-    renderBoardSlots({ boardElement: elements.boardElement, columns: COLUMNS, rows: ROWS });
-    tileView.refreshTilePositions(state.board, ROWS, COLUMNS);
+    renderBoardSlots({ boardElement: elements.boardElement, columns, rows });
+    tileView.refreshTilePositions(state.board, rows, columns);
+    positionTutorialGuide();
   }
 
   async function resetBoard() {
@@ -99,34 +144,58 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
-    prepareLevelState(state, getCurrentLevel());
+    const { level, columns, rows, tileKinds } = getCurrentLevelSettings();
+
+    prepareLevelState(state, level);
     hudView.hideLevelOverlay();
+
+    // Re-layout board for potential size change
+    fitBoardToViewport({
+      boardElement: elements.boardElement,
+      boardShellElement: elements.boardShellElement,
+      tileLayerElement: elements.tileLayerElement,
+      columns,
+      rows,
+    });
+    renderBoardSlots({ boardElement: elements.boardElement, columns, rows });
+
     renderHud();
     state.isProcessing = true;
     tileView.syncInteractivity();
     hudView.setStatus("入场中", "花朵从土里依次长出");
 
     tileView.clearAllTiles();
-    state.board = createBoard({
-      state,
-      columns: COLUMNS,
-      rows: ROWS,
-      tileKinds: TILE_KINDS,
-      maxAttempts: MAX_BOARD_GENERATION_ATTEMPTS,
-    });
+    
+    if (level.initialBoard) {
+      state.board = createFixedBoard({
+        state,
+        layout: level.initialBoard,
+        tileKindMap: TILE_KIND_MAP,
+      });
+    } else {
+      state.board = createBoard({
+        state,
+        columns,
+        rows,
+        tileKinds,
+        maxAttempts: MAX_BOARD_GENERATION_ATTEMPTS,
+      });
+    }
 
-    for (let x = 0; x < COLUMNS; x += 1) {
-      for (let y = 0; y < ROWS; y += 1) {
+    const entryMetrics = tileView.getBoardMetrics();
+
+    for (let x = 0; x < columns; x += 1) {
+      for (let y = 0; y < rows; y += 1) {
         const tile = state.board[y][x];
-        tileView.mountTileForEntry(tile);
+        tileView.mountTileForEntry(tile, entryMetrics);
       }
     }
 
     await animateBoardEntry({
       board: state.board,
       tileView,
-      columns: COLUMNS,
-      rows: ROWS,
+      columns,
+      rows,
       entryGrowDuration: ENTRY_GROW_DURATION,
       entryTileDelay: ENTRY_TILE_DELAY,
     });
@@ -135,6 +204,7 @@ export function initialize(doc = globalThis.document) {
     tileView.syncInteractivity();
     renderHud();
     hudView.setStatus("就绪", "等待点击");
+    updateTutorialGuide();
   }
 
   function onBoardClick(event) {
@@ -147,17 +217,97 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
+    const { columns, rows } = getCurrentLevelSettings();
     const tile = findTileById({
       board: state.board,
-      columns: COLUMNS,
-      rows: ROWS,
+      columns,
+      rows,
       tileId: Number(tileElement.dataset.tileId),
     });
     if (!tile) {
       return;
     }
 
+    if (isTutorialVisible && !isTutorialTarget(tile)) {
+      return;
+    }
+
+    hideTutorialGuide();
+
     void processTurn(tile);
+  }
+
+  function updateTutorialGuide() {
+    const targetTile = getTutorialTargetTile();
+    if (!targetTile) {
+      hideTutorialGuide();
+      return;
+    }
+
+    elements.tutorialTipElement.textContent = FIRST_LEVEL_TUTORIAL.tip;
+    elements.tutorialGuideElement.hidden = false;
+    isTutorialVisible = true;
+    positionTutorialGuide();
+  }
+
+  function positionTutorialGuide() {
+    if (!isTutorialVisible) {
+      return;
+    }
+
+    const targetTile = getTutorialTargetTile();
+    if (!targetTile) {
+      hideTutorialGuide();
+      return;
+    }
+
+    const targetElement = tileView.getTileElement(targetTile.id);
+    if (!targetElement) {
+      return;
+    }
+
+    const tileRect = targetElement.getBoundingClientRect();
+    const screenRect = elements.tutorialGuideElement.getBoundingClientRect();
+    const centerX = tileRect.left - screenRect.left + tileRect.width * 0.58;
+    const centerY = tileRect.top - screenRect.top + tileRect.height * 0.46;
+    elements.tutorialHandElement.style.left = `${centerX}px`;
+    elements.tutorialHandElement.style.top = `${centerY}px`;
+
+    const tipWidth = Math.min(screenRect.width - 36, 320);
+    const tipLeft = Math.max(18, Math.min(screenRect.width - tipWidth - 18, centerX - tipWidth / 2));
+    const tipTop = tileRect.top - screenRect.top + tileRect.height * 2 + 18;
+    elements.tutorialTipElement.style.width = `${tipWidth}px`;
+    elements.tutorialTipElement.style.left = `${tipLeft}px`;
+    elements.tutorialTipElement.style.top = `${tipTop}px`;
+  }
+
+  function hideTutorialGuide() {
+    if (!isTutorialVisible) {
+      return;
+    }
+
+    isTutorialVisible = false;
+    elements.tutorialGuideElement.hidden = true;
+  }
+
+  function getTutorialTargetTile() {
+    const level = getCurrentLevel();
+    if (level.id !== FIRST_LEVEL_TUTORIAL.levelId) {
+      return null;
+    }
+
+    const tile = state.board[FIRST_LEVEL_TUTORIAL.y]?.[FIRST_LEVEL_TUTORIAL.x] ?? null;
+    if (!tile || tile.kind.key !== FIRST_LEVEL_TUTORIAL.kind) {
+      return null;
+    }
+
+    return tile;
+  }
+
+  function isTutorialTarget(tile) {
+    return tile.x === FIRST_LEVEL_TUTORIAL.x
+      && tile.y === FIRST_LEVEL_TUTORIAL.y
+      && tile.kind.key === FIRST_LEVEL_TUTORIAL.kind;
   }
 
   async function processTurn(tile) {
@@ -165,18 +315,20 @@ export function initialize(doc = globalThis.document) {
     state.movesUsed += 1;
     renderHud();
     tileView.syncInteractivity();
+
+    const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
     hudView.setStatus(
       "结算中",
-      `删除 ${columnLabel(tile.x)} 列 ${tile.y + 1} 行，还剩 ${getRemainingMoves(state, MOVE_LIMIT)} 步`,
+      `删除 ${columnLabel(tile.x)} 列 ${tile.y + 1} 行，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
     );
 
     const initialResult = applyRemovalsAndCollapse({
       board: state.board,
       tilesToRemove: [tile],
-      columns: COLUMNS,
-      rows: ROWS,
+      columns,
+      rows,
       state,
-      tileKinds: TILE_KINDS,
+      tileKinds,
     });
     const initialResolution = await animateResolution({
       result: initialResult,
@@ -209,7 +361,7 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
-    if (state.movesUsed >= MOVE_LIMIT) {
+    if (state.movesUsed >= moveLimit) {
       state.isLevelFailed = true;
       state.isProcessing = false;
       tileView.syncInteractivity();
@@ -237,9 +389,10 @@ export function initialize(doc = globalThis.document) {
   async function resolveBoardMatches(contextLabel) {
     let cascadeCount = 0;
     const goalFlights = [];
+    const { columns, rows, tileKinds } = getCurrentLevelSettings();
 
-    while (true) {
-      const matchGroups = findMatchGroups(state.board, COLUMNS, ROWS);
+    while (cascadeCount < MAX_CASCADE_COUNT) {
+      const matchGroups = findMatchGroups(state.board, columns, rows);
       const matchedTiles = matchGroups.flat();
       if (matchedTiles.length === 0) {
         break;
@@ -252,10 +405,10 @@ export function initialize(doc = globalThis.document) {
         board: state.board,
         tilesToRemove: matchedTiles,
         tileGroups: matchGroups,
-        columns: COLUMNS,
-        rows: ROWS,
+        columns,
+        rows,
         state,
-        tileKinds: TILE_KINDS,
+        tileKinds,
       });
       const resolution = await animateResolution({
         result,
@@ -268,6 +421,10 @@ export function initialize(doc = globalThis.document) {
         onGoalArrive: handleGoalArrive,
       });
       goalFlights.push(resolution.goalFlights);
+    }
+
+    if (cascadeCount >= MAX_CASCADE_COUNT) {
+      hudView.setStatus("连锁停止", `${contextLabel}已达到 ${MAX_CASCADE_COUNT} 次连锁上限`);
     }
 
     return { cascadeCount, goalFlights };
@@ -306,10 +463,6 @@ export function initialize(doc = globalThis.document) {
       movesUsed: state.movesUsed,
       goalProgress: state.goalProgress,
     });
-  }
-
-  function getCurrentLevel() {
-    return LEVELS[state.currentLevelIndex] ?? LEVELS[0];
   }
 
   function getCurrentLevelLabel() {

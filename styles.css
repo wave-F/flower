@@ -107,12 +107,12 @@ body {
   padding: 13px 12px 13px 88px;
   border-radius: 30px;
   background:
-    linear-gradient(180deg, #b72f4e 0%, #8b1738 100%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.08));
+    linear-gradient(180deg, #3a7bd5 0%, #0052d4 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.05));
   box-shadow:
-    inset 0 0 0 2px rgba(117, 12, 36, 0.74),
-    inset 0 6px 0 rgba(255, 188, 129, 0.14),
-    0 10px 18px rgba(115, 27, 47, 0.26);
+    inset 0 0 0 2px rgba(0, 75, 165, 0.8),
+    inset 0 6px 0 rgba(255, 255, 255, 0.15),
+    0 10px 20px rgba(0, 50, 120, 0.3);
 }
 
 .hero-badge {
@@ -134,13 +134,26 @@ body {
   height: 100%;
   border-radius: 22px;
   background:
-    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.3), transparent 28%),
-    linear-gradient(180deg, #ffe490 0%, #ffbf4f 42%, #d98a22 100%);
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.4), transparent 28%),
+    linear-gradient(180deg, #ffffff 0%, #e0e8f5 42%, #b0c4de 100%);
   box-shadow:
-    inset 0 0 0 3px #ffd978,
-    inset 0 0 0 7px #9e421f,
-    0 8px 16px rgba(104, 40, 16, 0.35);
+    inset 0 0 0 3px #f0f5ff,
+    inset 0 0 0 7px #4682b4,
+    0 8px 16px rgba(0, 30, 80, 0.25);
   overflow: hidden;
+}
+
+.hero-badge--no-icon .hero-badge-flower {
+  display: none;
+}
+
+.hero-badge--no-icon .hero-badge-caption {
+  font-size: 10px;
+  margin-bottom: -2px;
+}
+
+.hero-badge--no-icon .hero-badge-level {
+  font-size: 24px;
 }
 
 .hero-badge-frame::before {
@@ -151,7 +164,7 @@ body {
   background:
     radial-gradient(circle at 50% 25%, rgba(156, 221, 255, 0.82), transparent 44%),
     linear-gradient(180deg, #5d7fe0 0%, #2f4baa 100%);
-  box-shadow: inset 0 0 0 2px rgba(255, 243, 196, 0.65);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
 }
 
 .hero-badge-flower,
@@ -166,11 +179,11 @@ body {
   height: 28px;
   margin-bottom: 1px;
   background: center / contain no-repeat url("./assets/flowers/flower_6.png");
-  filter: drop-shadow(0 3px 4px rgba(38, 23, 73, 0.32));
+  filter: drop-shadow(0 3px 4px rgba(0, 20, 60, 0.3));
 }
 
 .hero-badge-caption {
-  color: #fef4cb;
+  color: #eef2ff;
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -181,7 +194,7 @@ body {
   font-size: 19px;
   font-weight: 900;
   line-height: 1;
-  text-shadow: 0 2px 0 rgba(60, 30, 89, 0.48);
+  text-shadow: 0 2px 0 rgba(0, 30, 100, 0.5);
 }
 
 .hud-footer,
@@ -224,14 +237,14 @@ body {
   margin: 0;
   padding: 5px 14px 6px;
   border-radius: 14px;
-  background: linear-gradient(180deg, #a52949 0%, #7d1634 100%);
-  color: #fff7de;
+  background: linear-gradient(180deg, #4facfe 0%, #00f2fe 100%);
+  color: #fff;
   font-size: 14px;
   font-weight: 900;
   text-align: center;
   box-shadow:
-    inset 0 0 0 2px #ffbf58,
-    0 4px 0 rgba(103, 21, 45, 0.44);
+    inset 0 0 0 2px #fff,
+    0 4px 0 rgba(0, 100, 200, 0.4);
 }
 
 .goal-list {
@@ -311,6 +324,14 @@ body {
   --flower-image: url("./assets/flowers/flower_6.png");
 }
 
+.goal-swatch--green {
+  --flower-image: url("./assets/flowers/flower_7.png");
+}
+
+.goal-swatch--grass {
+  --flower-image: url("./assets/grass.png");
+}
+
 .goal-copy {
   min-width: 0;
 }
@@ -322,7 +343,7 @@ body {
 .goal-progress {
   display: block;
   margin: 0;
-  color: #864229;
+  color: #1a4a8e;
   font-size: 15px;
   font-weight: 900;
   text-align: center;
@@ -331,8 +352,8 @@ body {
 
 .move-value {
   margin: 0;
-  color: #732a2b;
-  font-size: 15px;
+  color: #1a4a8e;
+  font-size: 24px;
   font-weight: 900;
   line-height: 1;
   text-shadow: 0 2px 0 rgba(255, 255, 255, 0.55);
@@ -372,7 +393,7 @@ body {
 
 .level-overlay-title {
   margin: 0;
-  color: #8b1738;
+  color: #0052d4;
   font-size: 24px;
   font-weight: 900;
   text-shadow: 0 2px 0 rgba(255, 255, 255, 0.5);
@@ -584,6 +605,52 @@ body {
   overflow: visible;
 }
 
+.tutorial-guide {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.tutorial-guide[hidden] {
+  display: none;
+}
+
+.tutorial-hand {
+  position: absolute;
+  width: clamp(54px, 18vw, 82px);
+  height: auto;
+  filter: drop-shadow(0 8px 12px rgba(93, 48, 24, 0.28));
+  transform: translate(-18%, 6%);
+  animation: tutorial-tap 980ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
+}
+
+.tutorial-tip {
+  position: absolute;
+  padding: 12px 16px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fff8ef 0%, #f8e5c9 100%);
+  color: #7d2f26;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
+  box-shadow:
+    inset 0 0 0 3px rgba(243, 192, 111, 0.78),
+    0 12px 24px rgba(123, 57, 25, 0.22);
+}
+
+@keyframes tutorial-tap {
+  0%,
+  100% {
+    transform: translate(-18%, 6%) scale(1);
+  }
+  45% {
+    transform: translate(-10%, -2%) scale(0.94);
+  }
+}
+
 .tile.is-flying {
   position: fixed;
   pointer-events: none;
@@ -614,6 +681,10 @@ body {
 
 .tile--gold {
   --flower-image: url("./assets/flowers/flower_6.png");
+}
+
+.tile--green {
+  --flower-image: url("./assets/flowers/flower_7.png");
 }
 
 .tile--grass {
@@ -693,7 +764,7 @@ body {
   }
 
   .move-value {
-    font-size: 15px;
+    font-size: 22px;
   }
 
   .level-overlay-card {

@@ -56,6 +56,7 @@ export async function animateResolution({
 
 export async function animateBoardEntry({ board, tileView, columns, rows, entryGrowDuration, entryTileDelay }) {
   const entries = [];
+  const metrics = tileView.getBoardMetrics();
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < columns; x += 1) {
@@ -74,6 +75,7 @@ export async function animateBoardEntry({ board, tileView, columns, rows, entryG
       delay: index * entryTileDelay,
       column: tile.x,
       row: tile.y,
+      metrics,
       onArrive: resolve,
     });
   }));
@@ -94,16 +96,18 @@ function sortByCenterFirst(items, columns, rows) {
 }
 
 function animateDrops(dropped, spawned, tileView) {
+  const metrics = tileView.getBoardMetrics();
+
   for (const move of dropped) {
     const element = tileView.getTileElement(move.tile.id);
     if (element) {
-      tileView.setTileBoardPosition(element, move.tile.x, move.toY);
+      tileView.setTileBoardPosition(element, move.tile.x, move.toY, metrics);
     }
   }
 
   for (const spawn of spawned) {
-    const element = tileView.mountSpawnedTile(spawn.tile, spawn.fromRow);
-    tileView.setTileBoardPosition(element, spawn.tile.x, spawn.toRow);
+    const element = tileView.mountSpawnedTile(spawn.tile, spawn.fromRow, metrics);
+    tileView.setTileBoardPosition(element, spawn.tile.x, spawn.toRow, metrics);
     requestAnimationFrame(() => {
       element.classList.remove("is-spawning");
     });

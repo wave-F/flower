@@ -16,25 +16,25 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     return tileElements.get(tileId) ?? null;
   }
 
-  function mountTileForEntry(tile) {
+  function mountTileForEntry(tile, metrics = getCurrentBoardMetrics()) {
     const element = acquireTileElement();
     decorateTileElement(element, tile);
     tileElements.set(tile.id, element);
     tileLayerElement.appendChild(element);
 
-    placeTileAtBoardRowWithoutAnimation(element, tile.x, tile.y);
+    placeTileAtBoardRowWithoutAnimation(element, tile.x, tile.y, metrics);
     element.style.opacity = "0";
     element.style.transform = "scale(0)";
   }
 
-  function growTileIntoBoard(tileId, { duration, delay = 0, column, row, onArrive } = {}) {
+  function growTileIntoBoard(tileId, { duration, delay = 0, column, row, metrics = getCurrentBoardMetrics(), onArrive } = {}) {
     const element = tileElements.get(tileId);
     if (!element) {
       onArrive?.();
       return;
     }
 
-    setTileBoardPosition(element, column, row);
+    setTileBoardPosition(element, column, row, metrics);
     element.disabled = true;
     element.classList.add("is-growing");
 
@@ -61,12 +61,12 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     });
   }
 
-  function mountSpawnedTile(tile, fromRow) {
+  function mountSpawnedTile(tile, fromRow, metrics = getCurrentBoardMetrics()) {
     const element = acquireTileElement();
     decorateTileElement(element, tile);
     tileElements.set(tile.id, element);
     tileLayerElement.appendChild(element);
-    placeTileAtBoardRowWithoutAnimation(element, tile.x, fromRow);
+    placeTileAtBoardRowWithoutAnimation(element, tile.x, fromRow, metrics);
     element.classList.add("is-spawning");
     void element.offsetHeight;
     element.classList.remove("no-transition");
@@ -274,6 +274,8 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
   }
 
   function refreshTilePositions(board, rows, columns) {
+    const metrics = getCurrentBoardMetrics();
+
     for (let y = 0; y < rows; y += 1) {
       for (let x = 0; x < columns; x += 1) {
         const tile = board[y]?.[x] ?? null;
@@ -283,15 +285,18 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
 
         const element = tileElements.get(tile.id);
         if (element) {
-          setTileBoardPosition(element, x, y);
+          setTileBoardPosition(element, x, y, metrics);
         }
       }
     }
   }
 
-  function setTileBoardPosition(element, column, row) {
-    const metrics = getBoardMetrics({ boardElement, boardShellElement });
+  function setTileBoardPosition(element, column, row, metrics = getCurrentBoardMetrics()) {
     setTileStagePosition(element, metrics.left + column * metrics.span, metrics.top + row * metrics.span);
+  }
+
+  function getCurrentBoardMetrics() {
+    return getBoardMetrics({ boardElement, boardShellElement });
   }
 
   function acquireTileElement() {
@@ -334,8 +339,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     setTileStagePosition(element, left, top);
   }
 
-  function placeTileAtBoardRowWithoutAnimation(element, column, row) {
-    const metrics = getBoardMetrics({ boardElement, boardShellElement });
+  function placeTileAtBoardRowWithoutAnimation(element, column, row, metrics = getCurrentBoardMetrics()) {
     placeTileWithoutAnimation(
       element,
       metrics.left + column * metrics.span,
@@ -348,6 +352,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     flyTile,
     getTileElement,
     growTileIntoBoard,
+    getBoardMetrics: getCurrentBoardMetrics,
     mountSpawnedTile,
     mountTileForEntry,
     refreshTilePositions,

@@ -24,6 +24,7 @@ export function fitBoardToViewport({ boardElement, boardShellElement, tileLayerE
 export function renderBoardSlots({ boardElement, columns, rows }) {
   boardElement.innerHTML = "";
   const span = getCellSpan(boardElement);
+  const fragment = document.createDocumentFragment();
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < columns; x += 1) {
@@ -31,9 +32,11 @@ export function renderBoardSlots({ boardElement, columns, rows }) {
       slot.className = "slot";
       slot.style.left = `${x * span}px`;
       slot.style.top = `${y * span}px`;
-      boardElement.appendChild(slot);
+      fragment.appendChild(slot);
     }
   }
+
+  boardElement.appendChild(fragment);
 }
 
 export function getBoardMetrics({ boardElement, boardShellElement }) {
