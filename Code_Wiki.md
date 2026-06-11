@@ -102,6 +102,7 @@
 
 #### `src/config/tileKinds.js`
 - 定义所有可随机生成的 tile 类型 `TILE_KINDS`
+- 普通花朵资源当前按 `TILE_KINDS` 顺序映射到 `assets/flowers/flower_1.png` ~ `flower_6.png`：`amber`、`mint`、`sky`、`violet`、`rose`、`gold`
 - `grass` 使用 `assets/grass.png`，和普通花一样参与随机生成、点击移除、下落补位与同类连通块消除
 - `grass` 不写入 `src/config/levels.js` 的 `goals`，因此不会作为关卡目标，也不会计入目标进度
 - 提供按 `key` 查询的 `TILE_KIND_MAP`

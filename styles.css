@@ -165,7 +165,7 @@ body {
   width: 28px;
   height: 28px;
   margin-bottom: 1px;
-  background: center / contain no-repeat url("./assets/flowers/flower-gold.svg");
+  background: center / contain no-repeat url("./assets/flowers/flower_6.png");
   filter: drop-shadow(0 3px 4px rgba(38, 23, 73, 0.32));
 }
 
@@ -280,7 +280,7 @@ body {
 }
 
 .goal-swatch {
-  --flower-image: url("./assets/flowers/flower-rose.svg");
+  --flower-image: url("./assets/flowers/flower_5.png");
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
@@ -288,27 +288,27 @@ body {
 }
 
 .goal-swatch--amber {
-  --flower-image: url("./assets/flowers/flower-amber.svg");
+  --flower-image: url("./assets/flowers/flower_1.png");
 }
 
 .goal-swatch--mint {
-  --flower-image: url("./assets/flowers/flower-mint.svg");
+  --flower-image: url("./assets/flowers/flower_2.png");
 }
 
 .goal-swatch--sky {
-  --flower-image: url("./assets/flowers/flower-sky.svg");
+  --flower-image: url("./assets/flowers/flower_3.png");
 }
 
 .goal-swatch--violet {
-  --flower-image: url("./assets/flowers/flower-violet.svg");
+  --flower-image: url("./assets/flowers/flower_4.png");
 }
 
 .goal-swatch--rose {
-  --flower-image: url("./assets/flowers/flower-rose.svg");
+  --flower-image: url("./assets/flowers/flower_5.png");
 }
 
 .goal-swatch--gold {
-  --flower-image: url("./assets/flowers/flower-gold.svg");
+  --flower-image: url("./assets/flowers/flower_6.png");
 }
 
 .goal-copy {
@@ -495,7 +495,7 @@ body {
 
 .tile {
   --tile-scale: 1;
-  --flower-image: url("./assets/flowers/flower-rose.svg");
+  --flower-image: url("./assets/flowers/flower_5.png");
   position: absolute;
   pointer-events: auto;
   appearance: none;
@@ -593,27 +593,27 @@ body {
 }
 
 .tile--amber {
-  --flower-image: url("./assets/flowers/flower-amber.svg");
+  --flower-image: url("./assets/flowers/flower_1.png");
 }
 
 .tile--mint {
-  --flower-image: url("./assets/flowers/flower-mint.svg");
+  --flower-image: url("./assets/flowers/flower_2.png");
 }
 
 .tile--sky {
-  --flower-image: url("./assets/flowers/flower-sky.svg");
+  --flower-image: url("./assets/flowers/flower_3.png");
 }
 
 .tile--violet {
-  --flower-image: url("./assets/flowers/flower-violet.svg");
+  --flower-image: url("./assets/flowers/flower_4.png");
 }
 
 .tile--rose {
-  --flower-image: url("./assets/flowers/flower-rose.svg");
+  --flower-image: url("./assets/flowers/flower_5.png");
 }
 
 .tile--gold {
-  --flower-image: url("./assets/flowers/flower-gold.svg");
+  --flower-image: url("./assets/flowers/flower_6.png");
 }
 
 .tile--grass {
