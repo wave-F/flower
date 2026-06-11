@@ -1,63 +1,96 @@
 import { wait } from "../utils/time.js";
 
-export async function animateResolution({ result, tileView, removeDuration, fallDuration }) {
-  animateRemoval(result.removedTiles, tileView);
-  await wait(removeDuration);
+const GROUP_FLY_STAGGER = 120;
 
-  for (const tile of result.removedTiles) {
-    tileView.unmountTile(tile.id);
-  }
+export async function animateResolution({
+  result,
+  tileView,
+  removeDuration,
+  fallDuration,
+  flyDuration,
+  isGoalKind,
+  getGoalRect,
+  onGoalArrive,
+}) {
+  const removedTileGroups = result.removedTileGroups?.length ? result.removedTileGroups : [result.removedTiles];
+  const flights = [];
 
-  animateDrops(result.dropped, result.spawned, tileView);
-  await wait(fallDuration);
-}
+  removedTileGroups.forEach((group, groupIndex) => {
+    const delay = groupIndex * GROUP_FLY_STAGGER;
 
-export async function animateBoardEntry({ board, tileView, columns, rows, entryFallDuration, entryColumnDelay }) {
-  tileView.forEachTileElement((element) => {
-    void element.offsetHeight;
-  });
+    for (const tile of group) {
+      const isGoalTile = isGoalKind?.(tile.kind.key);
 
-  for (let x = 0; x < columns; x += 1) {
-    for (let y = 0; y < rows; y += 1) {
-      const tile = board[y]?.[x] ?? null;
-      const element = tile ? tileView.getTileElement(tile.id) : null;
-      if (!element) {
+      if (!isGoalTile) {
+        setTimeout(() => {
+          tileView.flyTile(tile.id, { duration: flyDuration });
+        }, delay);
         continue;
       }
 
-      element.classList.add("is-entering");
-      element.style.transitionDelay = `${x * entryColumnDelay}ms`;
-      element.classList.remove("no-transition");
+      flights.push(new Promise((resolve) => {
+        setTimeout(() => {
+          tileView.flyTile(tile.id, {
+            duration: flyDuration,
+            targetRect: getGoalRect?.(tile.kind.key) ?? null,
+            onArrive: () => {
+              onGoalArrive?.(tile);
+              resolve();
+            },
+          });
+        }, delay);
+      }));
     }
-  }
+  });
 
-  void tileView.getTileLayerElement().offsetHeight;
+  await wait(removeDuration + Math.max(0, removedTileGroups.length - 1) * GROUP_FLY_STAGGER);
 
-  for (let x = 0; x < columns; x += 1) {
-    for (let y = 0; y < rows; y += 1) {
+  // 下落与花朵飞散/飞行并行，不被飞行时长阻塞
+  animateDrops(result.dropped, result.spawned, tileView);
+  await wait(fallDuration);
+
+  return {
+    goalFlights: Promise.all(flights),
+  };
+}
+
+export async function animateBoardEntry({ board, tileView, columns, rows, entryGrowDuration, entryTileDelay }) {
+  const entries = [];
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < columns; x += 1) {
       const tile = board[y]?.[x] ?? null;
-      const element = tile ? tileView.getTileElement(tile.id) : null;
-      if (element) {
-        tileView.setTileBoardPosition(element, tile.x, tile.y);
+      if (tile && tileView.getTileElement(tile.id)) {
+        entries.push(tile);
       }
     }
   }
 
-  await wait(entryFallDuration + entryColumnDelay * (columns - 1));
+  sortByCenterFirst(entries, columns, rows);
 
-  tileView.forEachTileElement((element) => {
-    element.classList.remove("is-entering");
-    element.style.removeProperty("transition-delay");
-  });
+  const flights = entries.map((tile, index) => new Promise((resolve) => {
+    tileView.growTileIntoBoard(tile.id, {
+      duration: entryGrowDuration,
+      delay: index * entryTileDelay,
+      column: tile.x,
+      row: tile.y,
+      onArrive: resolve,
+    });
+  }));
+
+  await Promise.all(flights);
 }
 
-function animateRemoval(tiles, tileView) {
-  for (const tile of tiles) {
-    const element = tileView.getTileElement(tile.id);
-    if (element) {
-      element.classList.add("is-removing");
-    }
-  }
+function sortByCenterFirst(items, columns, rows) {
+  const centerX = (columns - 1) / 2;
+  const centerY = (rows - 1) / 2;
+  const tieBreakers = new Map(items.map((item) => [item.id, Math.random()]));
+
+  items.sort((a, b) => {
+    const distanceA = Math.hypot(a.x - centerX, a.y - centerY);
+    const distanceB = Math.hypot(b.x - centerX, b.y - centerY);
+    return distanceA - distanceB || tieBreakers.get(a.id) - tieBreakers.get(b.id);
+  });
 }
 
 function animateDrops(dropped, spawned, tileView) {

@@ -52,23 +52,35 @@ function createFallbackBoard({ state, columns, rows, tileKinds }) {
   return nextBoard;
 }
 
-export function applyRemovalsAndCollapse({ board, tilesToRemove, columns, rows, state, tileKinds }) {
+export function applyRemovalsAndCollapse({ board, tilesToRemove, tileGroups, columns, rows, state, tileKinds }) {
   const removedTiles = [];
+  const removedTileGroups = [];
+  const groupsToRemove = tileGroups ?? [tilesToRemove];
 
-  for (const tile of tilesToRemove) {
-    const currentTile = board[tile.y]?.[tile.x] ?? null;
-    if (!currentTile || currentTile.id !== tile.id) {
-      continue;
+  for (const group of groupsToRemove) {
+    const removedGroup = [];
+
+    for (const tile of group) {
+      const currentTile = board[tile.y]?.[tile.x] ?? null;
+      if (!currentTile || currentTile.id !== tile.id) {
+        continue;
+      }
+
+      board[tile.y][tile.x] = null;
+      removedTiles.push(currentTile);
+      removedGroup.push(currentTile);
     }
 
-    board[tile.y][tile.x] = null;
-    removedTiles.push(currentTile);
+    if (removedGroup.length > 0) {
+      removedTileGroups.push(removedGroup);
+    }
   }
 
   const collapseResult = collapseBoard({ board, columns, rows, state, tileKinds });
 
   return {
     removedTiles,
+    removedTileGroups,
     dropped: collapseResult.dropped,
     spawned: collapseResult.spawned,
   };

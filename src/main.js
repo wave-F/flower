@@ -1,9 +1,10 @@
 import {
   APP_TITLE,
   COLUMNS,
-  ENTRY_COLUMN_DELAY,
-  ENTRY_FALL_DURATION,
+  ENTRY_GROW_DURATION,
+  ENTRY_TILE_DELAY,
   FALL_DURATION,
+  FLY_DURATION,
   MAX_BOARD_GENERATION_ATTEMPTS,
   MOVE_LIMIT,
   REMOVE_DURATION,
@@ -12,8 +13,8 @@ import {
 import { LEVELS } from "./config/levels.js";
 import { TILE_KINDS } from "./config/tileKinds.js";
 import { applyRemovalsAndCollapse, createBoard, findTileById } from "./game/board.js";
-import { isCurrentLevelComplete, getRemainingMoves, prepareLevelState, recordRemovedTiles } from "./game/levelProgress.js";
-import { findMatches } from "./game/match.js";
+import { isCurrentLevelComplete, getRemainingMoves, prepareLevelState } from "./game/levelProgress.js";
+import { findMatchGroups } from "./game/match.js";
 import { createGameState } from "./state/gameState.js";
 import { columnLabel } from "./utils/grid.js";
 import { animateBoardEntry, animateResolution } from "./ui/animations.js";
@@ -36,6 +37,7 @@ export function initialize(doc = globalThis.document) {
   });
   const tileView = createTileView({
     tileLayerElement: elements.tileLayerElement,
+    flyLayerElement: elements.flyLayerElement,
     boardElement: elements.boardElement,
     boardShellElement: elements.boardShellElement,
     getInteractionDisabled: () => state.isProcessing || state.isLevelCompleted || state.isLevelFailed,
@@ -55,11 +57,30 @@ export function initialize(doc = globalThis.document) {
   window.addEventListener("resize", onViewportResize);
   window.addEventListener("orientationchange", onViewportResize);
 
+  startFpsCounter();
   void resetBoard();
 
   return {
     resetBoard,
   };
+
+  function startFpsCounter() {
+    let frameCount = 0;
+    let lastTime = performance.now();
+
+    function update() {
+      frameCount++;
+      const currentTime = performance.now();
+      if (currentTime - lastTime >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+        hudView.updateFps(fps);
+        frameCount = 0;
+        lastTime = currentTime;
+      }
+      requestAnimationFrame(update);
+    }
+    requestAnimationFrame(update);
+  }
 
   function onViewportResize() {
     fitBoardToViewport({
@@ -79,10 +100,11 @@ export function initialize(doc = globalThis.document) {
     }
 
     prepareLevelState(state, getCurrentLevel());
+    hudView.hideLevelOverlay();
     renderHud();
     state.isProcessing = true;
     tileView.syncInteractivity();
-    hudView.setStatus("入场中", "按列从屏幕上方瀑布落入棋盘");
+    hudView.setStatus("入场中", "花朵从土里依次长出");
 
     tileView.clearAllTiles();
     state.board = createBoard({
@@ -96,7 +118,7 @@ export function initialize(doc = globalThis.document) {
     for (let x = 0; x < COLUMNS; x += 1) {
       for (let y = 0; y < ROWS; y += 1) {
         const tile = state.board[y][x];
-        tileView.mountTileForEntry(tile, ROWS - 1 - y);
+        tileView.mountTileForEntry(tile);
       }
     }
 
@@ -105,8 +127,8 @@ export function initialize(doc = globalThis.document) {
       tileView,
       columns: COLUMNS,
       rows: ROWS,
-      entryFallDuration: ENTRY_FALL_DURATION,
-      entryColumnDelay: ENTRY_COLUMN_DELAY,
+      entryGrowDuration: ENTRY_GROW_DURATION,
+      entryTileDelay: ENTRY_TILE_DELAY,
     });
 
     state.isProcessing = false;
@@ -156,16 +178,22 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds: TILE_KINDS,
     });
-    recordRemovedTiles(state, initialResult.removedTiles);
-    renderHud();
-    await animateResolution({
+    const initialResolution = await animateResolution({
       result: initialResult,
       tileView,
       removeDuration: REMOVE_DURATION,
       fallDuration: FALL_DURATION,
+      flyDuration: FLY_DURATION,
+      isGoalKind,
+      getGoalRect: hudView.getGoalSwatchRect,
+      onGoalArrive: handleGoalArrive,
     });
 
-    const cascadeCount = await resolveBoardMatches("本次");
+    const cascadeResult = await resolveBoardMatches("本次");
+    await Promise.all([
+      initialResolution.goalFlights,
+      ...cascadeResult.goalFlights,
+    ]);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       state.isLevelCompleted = true;
@@ -173,6 +201,11 @@ export function initialize(doc = globalThis.document) {
       tileView.syncInteractivity();
       renderHud();
       hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
+      hudView.showLevelOverlay({
+        title: "关卡完成",
+        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
+        actionLabel: getActionButtonLabel(),
+      });
       return;
     }
 
@@ -182,6 +215,11 @@ export function initialize(doc = globalThis.document) {
       tileView.syncInteractivity();
       renderHud();
       hudView.setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
+      hudView.showLevelOverlay({
+        title: "步数用尽",
+        detail: `${getCurrentLevelLabel()} 未完成目标`,
+        actionLabel: getActionButtonLabel(),
+      });
       return;
     }
 
@@ -189,8 +227,8 @@ export function initialize(doc = globalThis.document) {
     tileView.syncInteractivity();
     renderHud();
 
-    if (cascadeCount > 0) {
-      hudView.setStatus("就绪", `本次触发 ${cascadeCount} 次连锁`);
+    if (cascadeResult.cascadeCount > 0) {
+      hudView.setStatus("就绪", `本次触发 ${cascadeResult.cascadeCount} 次连锁`);
     } else {
       hudView.setStatus("就绪", "本次未形成连通块消除");
     }
@@ -198,9 +236,11 @@ export function initialize(doc = globalThis.document) {
 
   async function resolveBoardMatches(contextLabel) {
     let cascadeCount = 0;
+    const goalFlights = [];
 
     while (true) {
-      const matchedTiles = findMatches(state.board, COLUMNS, ROWS);
+      const matchGroups = findMatchGroups(state.board, COLUMNS, ROWS);
+      const matchedTiles = matchGroups.flat();
       if (matchedTiles.length === 0) {
         break;
       }
@@ -211,22 +251,26 @@ export function initialize(doc = globalThis.document) {
       const result = applyRemovalsAndCollapse({
         board: state.board,
         tilesToRemove: matchedTiles,
+        tileGroups: matchGroups,
         columns: COLUMNS,
         rows: ROWS,
         state,
         tileKinds: TILE_KINDS,
       });
-      recordRemovedTiles(state, result.removedTiles);
-      renderHud();
-      await animateResolution({
+      const resolution = await animateResolution({
         result,
         tileView,
         removeDuration: REMOVE_DURATION,
         fallDuration: FALL_DURATION,
+        flyDuration: FLY_DURATION,
+        isGoalKind,
+        getGoalRect: hudView.getGoalSwatchRect,
+        onGoalArrive: handleGoalArrive,
       });
+      goalFlights.push(resolution.goalFlights);
     }
 
-    return cascadeCount;
+    return { cascadeCount, goalFlights };
   }
 
   function onNextLevelButtonClick() {
@@ -238,7 +282,22 @@ export function initialize(doc = globalThis.document) {
       state.currentLevelIndex = state.currentLevelIndex < LEVELS.length - 1 ? state.currentLevelIndex + 1 : 0;
     }
 
+    hudView.hideLevelOverlay();
     void resetBoard();
+  }
+
+  function isGoalKind(kind) {
+    return kind in state.goalProgress;
+  }
+
+  function handleGoalArrive(tile) {
+    if (!isGoalKind(tile.kind.key)) {
+      return;
+    }
+
+    state.goalProgress[tile.kind.key] += 1;
+    renderHud();
+    hudView.bumpGoal(tile.kind.key);
   }
 
   function renderHud() {
@@ -246,9 +305,6 @@ export function initialize(doc = globalThis.document) {
       level: getCurrentLevel(),
       movesUsed: state.movesUsed,
       goalProgress: state.goalProgress,
-      isLevelCompleted: state.isLevelCompleted,
-      isLevelFailed: state.isLevelFailed,
-      actionButtonLabel: getActionButtonLabel(),
     });
   }
 

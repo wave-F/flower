@@ -1,12 +1,21 @@
 import { TILE_KIND_MAP } from "../config/tileKinds.js";
 
 export function createHudView({ elements, moveLimit, appTitle }) {
-  function renderLevelHud({ level, movesUsed, goalProgress, isLevelCompleted, isLevelFailed, actionButtonLabel }) {
+  function renderLevelHud({ level, movesUsed, goalProgress }) {
     elements.levelBadgeElement.textContent = String(level.id);
-    elements.moveLabelElement.textContent = `步数 ${movesUsed} / ${moveLimit}`;
+    elements.moveLabelElement.textContent = String(Math.max(moveLimit - movesUsed, 0));
     renderGoalList(level.goals, goalProgress);
-    elements.nextLevelButtonElement.hidden = !isLevelCompleted && !isLevelFailed;
-    elements.nextLevelButtonElement.textContent = actionButtonLabel;
+  }
+
+  function showLevelOverlay({ title, detail, actionLabel }) {
+    elements.levelOverlayTitleElement.textContent = title;
+    elements.levelOverlayDetailElement.textContent = detail ?? "";
+    elements.nextLevelButtonElement.textContent = actionLabel;
+    elements.levelOverlayElement.hidden = false;
+  }
+
+  function hideLevelOverlay() {
+    elements.levelOverlayElement.hidden = true;
   }
 
   function setStatus(title, detail) {
@@ -23,6 +32,7 @@ export function createHudView({ elements, moveLimit, appTitle }) {
       const kind = TILE_KIND_MAP[goal.kind] ?? Object.values(TILE_KIND_MAP)[0];
 
       item.className = isComplete ? "goal-item is-complete" : "goal-item";
+      item.dataset.goalKind = goal.kind;
 
       const swatch = document.createElement("span");
       swatch.className = `goal-swatch goal-swatch--${goal.kind}`;
@@ -45,8 +55,38 @@ export function createHudView({ elements, moveLimit, appTitle }) {
     }
   }
 
+  function getGoalSwatchRect(kind) {
+    const item = elements.goalListElement.querySelector(`[data-goal-kind="${kind}"]`);
+    const swatch = item?.querySelector(".goal-swatch");
+    if (!swatch) {
+      return null;
+    }
+
+    return swatch.getBoundingClientRect();
+  }
+
+  function bumpGoal(kind) {
+    const item = elements.goalListElement.querySelector(`[data-goal-kind="${kind}"]`);
+    if (!item) {
+      return;
+    }
+
+    item.classList.remove("is-bumping");
+    void item.offsetWidth;
+    item.classList.add("is-bumping");
+  }
+
+  function updateFps(fps) {
+    elements.fpsCounterElement.textContent = `FPS: ${fps}`;
+  }
+
   return {
     renderLevelHud,
+    showLevelOverlay,
+    hideLevelOverlay,
     setStatus,
+    getGoalSwatchRect,
+    bumpGoal,
+    updateFps,
   };
 }

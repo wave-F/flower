@@ -68,9 +68,25 @@ body {
 }
 
 .game-screen {
+  position: relative;
   flex-direction: column;
   padding: 14px 10px 10px;
   gap: 10px;
+}
+
+.fps-counter {
+  position: absolute;
+  top: 4px;
+  right: 10px;
+  z-index: 100;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: 10px;
+  font-family: monospace;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
 }
 
 .hud {
@@ -84,9 +100,12 @@ body {
   display: flex;
   align-items: stretch;
   gap: 10px;
-  min-height: 114px;
-  padding: 10px 12px 10px 106px;
-  border-radius: 34px;
+  width: calc(100% - 28px);
+  max-width: calc(var(--board-pixel-width, 999px) + 24px);
+  margin: 0 auto;
+  min-height: 96px;
+  padding: 13px 12px 13px 88px;
+  border-radius: 30px;
   background:
     linear-gradient(180deg, #b72f4e 0%, #8b1738 100%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.08));
@@ -101,8 +120,8 @@ body {
   left: 10px;
   top: 50%;
   transform: translateY(-50%);
-  width: 90px;
-  height: 90px;
+  width: 66px;
+  height: 66px;
 }
 
 .hero-badge-frame {
@@ -113,7 +132,7 @@ body {
   justify-content: center;
   width: 100%;
   height: 100%;
-  border-radius: 28px;
+  border-radius: 22px;
   background:
     radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.3), transparent 28%),
     linear-gradient(180deg, #ffe490 0%, #ffbf4f 42%, #d98a22 100%);
@@ -127,8 +146,8 @@ body {
 .hero-badge-frame::before {
   content: "";
   position: absolute;
-  inset: 12px;
-  border-radius: 20px;
+  inset: 9px;
+  border-radius: 16px;
   background:
     radial-gradient(circle at 50% 25%, rgba(156, 221, 255, 0.82), transparent 44%),
     linear-gradient(180deg, #5d7fe0 0%, #2f4baa 100%);
@@ -143,23 +162,23 @@ body {
 }
 
 .hero-badge-flower {
-  width: 38px;
-  height: 38px;
-  margin-bottom: 2px;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 1px;
   background: center / contain no-repeat url("./assets/flowers/flower-gold.svg");
   filter: drop-shadow(0 3px 4px rgba(38, 23, 73, 0.32));
 }
 
 .hero-badge-caption {
   color: #fef4cb;
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.12em;
 }
 
 .hero-badge-level {
   color: #ffffff;
-  font-size: 24px;
+  font-size: 19px;
   font-weight: 900;
   line-height: 1;
   text-shadow: 0 2px 0 rgba(60, 30, 89, 0.48);
@@ -178,9 +197,9 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 94px;
-  padding: 22px 12px 12px;
-  border-radius: 24px;
+  min-height: 82px;
+  padding: 16px 12px 8px;
+  border-radius: 20px;
   background: linear-gradient(180deg, #fff8ef 0%, #f8eddc 100%);
   box-shadow:
     inset 0 0 0 3px #f3d4a0,
@@ -196,22 +215,15 @@ body {
   align-items: center;
 }
 
-.next-level-button {
-  flex: 0 0 auto;
-  min-width: 88px;
-  width: auto;
-  padding: 10px 14px;
-}
-
 .hud-card-title {
   position: absolute;
-  top: -12px;
+  top: -11px;
   left: 50%;
   transform: translateX(-50%);
-  min-width: 86px;
+  min-width: 78px;
   margin: 0;
-  padding: 7px 16px 9px;
-  border-radius: 16px;
+  padding: 5px 14px 6px;
+  border-radius: 14px;
   background: linear-gradient(180deg, #a52949 0%, #7d1634 100%);
   color: #fff7de;
   font-size: 14px;
@@ -238,8 +250,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-width: 52px;
-  min-height: 52px;
+  min-width: 48px;
+  min-height: 40px;
   padding: 0;
   border-radius: 16px;
   background: transparent;
@@ -251,38 +263,52 @@ body {
   opacity: 0.82;
 }
 
+.goal-item.is-bumping {
+  animation: goal-bump 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes goal-bump {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 .goal-swatch {
+  --flower-image: url("./assets/flowers/flower-rose.svg");
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  box-shadow:
-    inset 0 0 0 2px rgba(255, 255, 255, 0.58),
-    0 4px 8px rgba(145, 89, 35, 0.18);
+  width: 30px;
+  height: 30px;
+  background: center / contain no-repeat var(--flower-image);
 }
 
 .goal-swatch--amber {
-  background: linear-gradient(180deg, #ffcf71, #f0a21d);
+  --flower-image: url("./assets/flowers/flower-amber.svg");
 }
 
 .goal-swatch--mint {
-  background: linear-gradient(180deg, #a5f0d0, #3ebf8d);
+  --flower-image: url("./assets/flowers/flower-mint.svg");
 }
 
 .goal-swatch--sky {
-  background: linear-gradient(180deg, #99dfff, #49a7f3);
+  --flower-image: url("./assets/flowers/flower-sky.svg");
 }
 
 .goal-swatch--violet {
-  background: linear-gradient(180deg, #d7c1ff, #8c61f0);
+  --flower-image: url("./assets/flowers/flower-violet.svg");
 }
 
 .goal-swatch--rose {
-  background: linear-gradient(180deg, #ffbfd6, #ef6ca0);
+  --flower-image: url("./assets/flowers/flower-rose.svg");
 }
 
 .goal-swatch--gold {
-  background: linear-gradient(180deg, #ffe6a5, #dcb23a);
+  --flower-image: url("./assets/flowers/flower-gold.svg");
 }
 
 .goal-copy {
@@ -306,32 +332,81 @@ body {
 .move-value {
   margin: 0;
   color: #732a2b;
-  font-size: 40px;
+  font-size: 15px;
   font-weight: 900;
   line-height: 1;
   text-shadow: 0 2px 0 rgba(255, 255, 255, 0.55);
 }
 
-.next-level-button {
+.level-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(63, 26, 15, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.level-overlay[hidden] {
+  display: none;
+}
+
+.level-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 300px;
+  padding: 28px 24px 24px;
+  border-radius: 28px;
+  background: linear-gradient(180deg, #fff8ef 0%, #f7e7d2 100%);
+  box-shadow:
+    inset 0 0 0 3px #f3d4a0,
+    0 24px 60px rgba(120, 60, 30, 0.4);
+  text-align: center;
+}
+
+.level-overlay-title {
+  margin: 0;
+  color: #8b1738;
+  font-size: 24px;
+  font-weight: 900;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.5);
+}
+
+.level-overlay-detail {
+  margin: 0;
+  color: #864229;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.level-overlay-button {
   appearance: none;
   -webkit-appearance: none;
   border: 0;
-  padding: 10px 16px;
+  margin-top: 4px;
+  padding: 12px 28px;
   border-radius: 999px;
   background: linear-gradient(180deg, #ffb36d, #ef7f47);
   color: #fffaf5;
   font: inherit;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 800;
   cursor: pointer;
-  box-shadow: 0 10px 20px rgba(213, 104, 49, 0.24);
+  box-shadow: 0 10px 20px rgba(213, 104, 49, 0.28);
 }
 
-.next-level-button:hover {
+.level-overlay-button:hover {
   filter: brightness(1.04);
 }
 
-.next-level-button:focus-visible {
+.level-overlay-button:focus-visible {
   outline: 2px solid rgba(200, 109, 65, 0.55);
   outline-offset: 2px;
 }
@@ -360,6 +435,7 @@ body {
 .board {
   --tile-size: 52px;
   --gap: 6px;
+  --grid-line: rgba(145, 84, 48, 0.1);
   position: relative;
   z-index: 1;
   width: calc(var(--board-columns) * var(--tile-size) + (var(--board-columns) - 1) * var(--gap));
@@ -376,18 +452,38 @@ body {
   overflow: visible;
 }
 
+.board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent var(--tile-size),
+      var(--grid-line) var(--tile-size),
+      var(--grid-line) calc(var(--tile-size) + 1px),
+      transparent calc(var(--tile-size) + 1px),
+      transparent calc(var(--tile-size) + var(--gap))
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent var(--tile-size),
+      var(--grid-line) var(--tile-size),
+      var(--grid-line) calc(var(--tile-size) + 1px),
+      transparent calc(var(--tile-size) + 1px),
+      transparent calc(var(--tile-size) + var(--gap))
+    );
+}
+
 .slot {
   position: absolute;
   width: var(--tile-size);
   height: var(--tile-size);
-  border-radius: 18px;
-  background: transparent;
-  background:
-    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.52), transparent 34%),
-    linear-gradient(180deg, rgba(255, 240, 221, 0.88), rgba(255, 223, 194, 0.84));
-  box-shadow:
-    inset 0 0 0 1px rgba(233, 184, 143, 0.35),
-    inset 0 -10px 18px rgba(236, 170, 124, 0.14);
 }
 
 .tile-layer {
@@ -400,7 +496,6 @@ body {
 .tile {
   --tile-scale: 1;
   --flower-image: url("./assets/flowers/flower-rose.svg");
-  --flower-brightness: 1;
   position: absolute;
   pointer-events: auto;
   appearance: none;
@@ -420,8 +515,7 @@ body {
   transition:
     top 500ms cubic-bezier(0.18, 0.7, 0.28, 1),
     opacity 140ms ease,
-    transform 140ms ease,
-    filter 140ms ease;
+    transform 140ms ease;
 }
 
 .tile::before {
@@ -429,18 +523,34 @@ body {
   position: absolute;
   inset: -4%;
   background: center / contain no-repeat var(--flower-image);
-  filter: brightness(var(--flower-brightness));
-  transition:
-    transform 140ms ease,
-    filter 140ms ease;
+  transform-origin: 50% 86%;
+  transition: transform 140ms ease;
 }
 
 .tile.no-transition {
   transition: none;
 }
 
-.tile:hover {
-  --flower-brightness: 1.06;
+.tile:not(:disabled):not(.is-flying):not(.is-growing):hover::before {
+  animation: flower-wobble 320ms ease-out 1;
+}
+
+@keyframes flower-wobble {
+  0% {
+    transform: rotateZ(0deg);
+  }
+  25% {
+    transform: rotateZ(-5deg);
+  }
+  55% {
+    transform: rotateZ(4deg);
+  }
+  80% {
+    transform: rotateZ(-2deg);
+  }
+  100% {
+    transform: rotateZ(0deg);
+  }
 }
 
 .tile:disabled {
@@ -461,9 +571,25 @@ body {
   opacity: 0.3;
 }
 
-.tile.is-entering {
-  transition-duration: 420ms, 140ms, 140ms, 140ms;
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1), ease, ease, ease;
+.tile.is-growing {
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.fly-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.tile.is-flying {
+  position: fixed;
+  pointer-events: none;
+  transform: translate(0, 0) scale(1) rotate(0deg);
+  transition: none;
+  will-change: transform, opacity;
 }
 
 .tile--amber {
@@ -490,6 +616,10 @@ body {
   --flower-image: url("./assets/flowers/flower-gold.svg");
 }
 
+.tile--grass {
+  --flower-image: url("./assets/grass.png");
+}
+
 @media (max-width: 720px) {
   .app {
     /* 手机：框宽直接跟随屏幕(仍受 430 上限约束)，高度由 .phone-frame 自适应 */
@@ -509,35 +639,35 @@ body {
 
   .hud-bar {
     gap: 8px;
-    min-height: 100px;
-    padding: 8px 8px 8px 88px;
-    border-radius: 28px;
+    min-height: 88px;
+    padding: 12px 8px 12px 74px;
+    border-radius: 24px;
   }
 
   .hero-badge {
     left: 8px;
-    width: 74px;
-    height: 74px;
+    width: 60px;
+    height: 60px;
   }
 
   .hero-badge-flower {
-    width: 30px;
-    height: 30px;
+    width: 24px;
+    height: 24px;
   }
 
   .hero-badge-level {
-    font-size: 20px;
+    font-size: 17px;
   }
 
   .hud-card {
-    min-height: 84px;
-    padding: 18px 8px 8px;
-    border-radius: 20px;
+    min-height: 76px;
+    padding: 14px 8px 6px;
+    border-radius: 18px;
   }
 
   .hud-card-title {
-    min-width: 72px;
-    font-size: 12px;
+    min-width: 68px;
+    font-size: 11px;
   }
 
   .goal-list {
@@ -546,12 +676,12 @@ body {
 
   .goal-item {
     min-width: 40px;
-    min-height: 46px;
+    min-height: 38px;
   }
 
   .goal-swatch {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
   }
 
   .goal-progress {
@@ -563,13 +693,16 @@ body {
   }
 
   .move-value {
-    font-size: 24px;
+    font-size: 15px;
   }
 
-  .next-level-button {
-    min-width: 74px;
-    padding: 8px 12px;
-    font-size: 12px;
+  .level-overlay-card {
+    max-width: 260px;
+    padding: 24px 20px 20px;
+  }
+
+  .level-overlay-title {
+    font-size: 21px;
   }
 
   .board-shell {

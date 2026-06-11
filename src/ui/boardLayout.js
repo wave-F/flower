@@ -7,6 +7,8 @@ export function fitBoardToViewport({ boardElement, boardShellElement, tileLayerE
   const tileSizeByWidth = Math.floor((usableWidth - gap * (columns - 1)) / columns);
   const tileSizeByHeight = Math.floor((usableHeight - gap * (rows - 1)) / rows);
   const tileSize = Math.max(34, Math.min(tileSizeByWidth, tileSizeByHeight));
+  const boardPixelWidth = columns * tileSize + (columns - 1) * gap;
+  const gameScreenElement = boardShellElement.closest(".game-screen");
 
   boardElement.style.setProperty("--board-columns", String(columns));
   boardElement.style.setProperty("--board-rows", String(rows));
@@ -14,6 +16,9 @@ export function fitBoardToViewport({ boardElement, boardShellElement, tileLayerE
   boardElement.style.setProperty("--tile-size", `${tileSize}px`);
   tileLayerElement.style.setProperty("--gap", `${gap}px`);
   tileLayerElement.style.setProperty("--tile-size", `${tileSize}px`);
+  if (gameScreenElement) {
+    gameScreenElement.style.setProperty("--board-pixel-width", `${boardPixelWidth}px`);
+  }
 }
 
 export function renderBoardSlots({ boardElement, columns, rows }) {

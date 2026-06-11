@@ -1,8 +1,12 @@
 import { getOrthogonalNeighbors, toCellKey } from "../utils/grid.js";
 
 export function findMatches(boardState, columns, rows) {
+  return findMatchGroups(boardState, columns, rows).flat();
+}
+
+export function findMatchGroups(boardState, columns, rows) {
   const visited = new Set();
-  const matches = new Map();
+  const matchGroups = [];
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < columns; x += 1) {
@@ -21,13 +25,11 @@ export function findMatches(boardState, columns, rows) {
         continue;
       }
 
-      for (const groupTile of group) {
-        matches.set(groupTile.id, groupTile);
-      }
+      matchGroups.push(group);
     }
   }
 
-  return Array.from(matches.values());
+  return matchGroups;
 }
 
 function collectConnectedGroup(boardState, startX, startY, columns, rows, visited) {

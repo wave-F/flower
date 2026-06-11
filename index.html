@@ -10,6 +10,7 @@
     <main class="app">
       <section class="phone-frame">
         <section class="game-screen">
+          <div id="fpsCounter" class="fps-counter" aria-hidden="true">FPS: --</div>
           <header class="hud">
             <div class="hud-bar">
               <div class="hero-badge" aria-hidden="true">
@@ -27,16 +28,21 @@
                 <h2 id="movePanelTitle" class="hud-card-title">步数</h2>
                 <p id="moveLabel" class="move-value">10</p>
               </section>
-              <button id="nextLevelButton" class="next-level-button" type="button" hidden>
-                下一关
-              </button>
             </div>
           </header>
           <div class="board-shell">
             <div id="board" class="board" aria-label="game board"></div>
             <div id="tileLayer" class="tile-layer" aria-hidden="true"></div>
           </div>
+          <div id="levelOverlay" class="level-overlay" role="dialog" aria-modal="true" aria-labelledby="levelOverlayTitle" hidden>
+            <div class="level-overlay-card">
+              <h2 id="levelOverlayTitle" class="level-overlay-title">关卡完成</h2>
+              <p id="levelOverlayDetail" class="level-overlay-detail"></p>
+              <button id="nextLevelButton" class="level-overlay-button" type="button">下一关</button>
+            </div>
+          </div>
         </section>
+        <div id="flyLayer" class="fly-layer" aria-hidden="true"></div>
       </section>
     </main>
 

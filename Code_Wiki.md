@@ -24,6 +24,7 @@
 ```text
 /
   assets/
+    grass.png
     flowers/
   src/
     config/
@@ -69,13 +70,14 @@
 
 #### `index.html`
 - 页面入口
-- 提供 HUD、棋盘容器、下一关按钮
+- 提供 HUD、棋盘容器、关卡结算覆盖层 `#levelOverlay`（内含「下一关 / 重试」按钮 `#nextLevelButton`）
+- 顶层飞行浮层 `#flyLayer`：作为 `.phone-frame` 的直接子级，专门承载「飞向目标」的花朵，使其层级高于 HUD（详见「飞行层级」）
 - 通过 `<script type="module">` 加载 `src/main.js`
 
 #### `styles.css`
 - 全局页面样式
 - 棋盘、格子、花朵 tile 的视觉表现
-- 消除、生成、入场等 CSS 过渡动画
+- 消除、生成等 CSS 过渡，以及飞行层样式
 - 响应式布局与移动端适配（详见下文「布局与适配」）
 
 #### `package.json`
@@ -99,7 +101,9 @@
 - 应用标题 `APP_TITLE`
 
 #### `src/config/tileKinds.js`
-- 定义所有花朵类型 `TILE_KINDS`
+- 定义所有可随机生成的 tile 类型 `TILE_KINDS`
+- `grass` 使用 `assets/grass.png`，和普通花一样参与随机生成、点击移除、下落补位与同类连通块消除
+- `grass` 不写入 `src/config/levels.js` 的 `goals`，因此不会作为关卡目标，也不会计入目标进度
 - 提供按 `key` 查询的 `TILE_KIND_MAP`
 
 #### `src/config/levels.js`
@@ -118,6 +122,7 @@
 - 创建 tile 数据
 - 生成初始棋盘
 - 执行移除、下落、补位
+- `applyRemovalsAndCollapse(...)` 返回 `removedTiles` 和 `removedTileGroups`：前者供总数/兼容逻辑使用，后者保留消除组，供动画按组错峰起飞
 - 提供按 id 查找 tile 的能力
 
 这是“棋盘数据变化”的核心模块。
@@ -125,6 +130,8 @@
 #### `src/game/match.js`
 - 检测棋盘中的可消除连通块
 - 当前规则是“正交连通且同色，数量 >= 3”
+- `findMatchGroups(boardState, columns, rows)` 返回每个可消除连通块组成的二维数组
+- `findMatches(...)` 保留为兼容 API，内部把 `findMatchGroups(...)` 结果拍平成单个 tile 数组
 
 这是“匹配规则”的核心模块。
 
@@ -137,27 +144,39 @@
 ### `src/ui/`
 
 #### `src/ui/dom.js`
-- 集中获取页面上必须存在的 DOM 节点
+- 集中获取页面上必须存在的 DOM 节点（含棋盘、tile 层、目标列表、以及顶层飞行浮层 `#flyLayer`）
 - 如果关键节点缺失，尽早报错
 
 #### `src/ui/boardLayout.js`
 - 根据视口大小计算棋盘布局
 - 设置 CSS 变量 `--tile-size` / `--gap`
-- 绘制底部格子槽位
+- 管理棋盘槽位生成；`.slot` 只做不可见占位，棋盘底部的连续横纵网格线由 `.board::before` 绘制，用来轻微标出格子
 
 #### `src/ui/tileView.js`
 - 管理 tile DOM 元素的创建、复用、销毁
 - 负责 tile 的位置更新与交互状态同步
-- 负责入场初始位置、补位初始位置等与棋盘坐标的转换
+- 负责入场、补位等与棋盘坐标的转换
+- `growTileIntoBoard(tileId, { duration, delay, column, row, onArrive })`：开场入场动画使用；tile 固定在最终棋盘格，从 `scale(0)` / 透明状态原地放大淡入，表现成从土里长出来
+- `flyTile(tileId, { duration, targetRect, onArrive })`：统一处理消除后的花朵飞行；目标花传入 `targetRect` 后沿三次贝塞尔曲线收束到 HUD 目标图标，非目标花不传 `targetRect`，沿同一套贝塞尔曲线飞向屏幕外并淡出
+- `flyTileByBezier(...)`：JS 逐帧采样 cubic Bezier，按每朵花随机的控制点、旋转、缩放呼吸感和透明度更新 inline `transform` / `opacity`；用于消除飞出，不再依赖 CSS `transition` 或 `@keyframes` 描述飞行路径
+- `liftTileToFlyLayer`：负责把元素接管到浮层并固定像素宽高/位置，避免 HUD 遮挡和棋盘裁切
+- 移入 `#flyLayer` 的目的：飞行花朵需要盖在 HUD 之上且不被 `.board-shell` 的 `overflow:hidden` 裁切（详见下文「飞行层级」）
 
 #### `src/ui/animations.js`
 - 负责移除、下落、补位、整盘入场的动画时序
 - 逻辑层算出结果后，由这里把视觉过程播出来
+- `animateBoardEntry(...)` 会把初始棋盘按距离棋盘中心由近到远错峰启动 `tileView.growTileIntoBoard()`，形成花朵先从中间、再到边缘依次从土里长出的入场效果
+- 消除时目标花和非目标花都调用 `tileView.flyTile()`：目标花传 `targetRect` 并在命中时通过 `onGoalArrive` 回调通知上层更新进度；非目标花不传 `targetRect`，只做飞散视觉，不更新进度
+- `GROUP_FLY_STAGGER = 120`：一次结算中如果有多个消除组，会按组错峰启动飞行；下落补位会等到最后一组开始飞之后再执行，避免还没起飞的花被补位视觉覆盖
+- `animateResolution` 在移除和下落完成后就返回 `{ goalFlights }`，不会等待目标花飞行结束；主流程收集这些 Promise，让后续连锁可以在上一批飞行期间继续触发，最后在成功/失败判定前统一等待目标花命中，保证目标进度完整
 
 #### `src/ui/hudView.js`
 - 渲染关卡标题、步数、目标列表
 - 更新状态面板文案
-- 控制下一关 / 重试按钮文案与显隐
+- `showLevelOverlay({ title, detail, actionLabel })` / `hideLevelOverlay()`：在关卡完成或失败时弹出/收起独立的结算覆盖层 `#levelOverlay`（不再把按钮塞在 HUD 里），并设置覆盖层标题、说明与操作按钮文案
+- 目标列表项带 `data-goal-kind`，目标小图标 `.goal-swatch` 复用 `--flower-image` 显示对应花朵图片（不再是纯色点）
+- `getGoalSwatchRect(kind)`：返回某目标花朵图标的视口坐标，供飞行动画作为终点
+- `bumpGoal(kind)`：给对应目标项加上 `is-bumping`，触发数字「跳一下」反馈
 
 ### `src/utils/`
 
@@ -236,17 +255,21 @@
 3. 初始化 HUD 和 Tile View
 4. 计算棋盘尺寸
 5. 生成无初始连锁的棋盘
-6. 执行整盘入场动画
+6. 执行整盘原地长出动画
 
 ### 一次点击 Turn Resolution
 
 1. 玩家点击一个 tile
 2. 直接移除该 tile
 3. 棋盘下落与顶部补位
-4. 播放移除/掉落动画
-5. 检测是否形成连锁
-6. 如果有连锁则继续结算
-7. 更新目标进度、步数、成功/失败状态
+4. 播放移除/掉落动画：
+   - 目标花朵旋转飞向 HUD 目标面板，命中瞬间对应目标数量逐朵 +1（带跳动反馈）
+   - 非目标花朵飞向屏幕外并淡出
+5. 下落完成后立即检测是否形成连锁，不等待上一批目标花飞行结束
+6. 如果有连锁则继续结算，并继续收集每轮目标花的 `goalFlights`
+7. 所有棋盘连锁结束后，等待已收集的目标花飞行命中，再更新成功/失败状态
+
+注意：目标进度不再在动画前一次性写入，而是由 `main.js` 的 `handleGoalArrive(tile)` 在每朵目标花飞行命中时逐朵累加并刷新 HUD。`recordRemovedTiles` 已不再被主流程调用（单朵记录逻辑内联在 `handleGoalArrive`）。
 
 ## 后续扩展建议 Extension Guide
 
@@ -309,14 +332,29 @@
 
 这是最容易在重构时引入 bug 的地方。
 
-### 3. 动画时间和 CSS 是一套协议
+### 3. 动画时间和 JS/CSS 是一套协议
 
 这些值要同步关注：
 
 - `REMOVE_DURATION`
+- `FLY_DURATION`（消除后花朵飞行时长，由 `tileView.flyTile()` 的 JS 贝塞尔动画使用）
+- `GROUP_FLY_STAGGER`（同一次结算中，不同消除组飞行动画的启动间隔，目前定义在 `src/ui/animations.js`）
 - `FALL_DURATION`
-- `ENTRY_FALL_DURATION`
-- `styles.css` 里对应的 `transition`
+- `ENTRY_GROW_DURATION`（开场单朵花原地长出时长）
+- `ENTRY_TILE_DELAY`（开场每朵花错峰启动间隔；配合中心到边缘排序形成扩散式长出）
+- `styles.css` 里对应的 `transition` / `.tile.is-flying` 状态
+
+飞行相关协议：`.tile.is-flying` 只负责固定消除飞行元素的层级与禁用 CSS 过渡；真实路径由 `tileView.flyTileByBezier()` 用 `requestAnimationFrame` 逐帧写入 inline `transform` / `opacity`。消除飞出结束后由 `releaseTileElement` 回收并清理 inline 样式。开场长出不使用 `#flyLayer`，由 `growTileIntoBoard()` 在棋盘固定位置播放 Web Animations API 的缩放/淡入动画，结束后移除 `.no-transition`，避免后续下落动画失效。
+
+### 7. 飞行层级 Fly Layer Stacking
+
+飞向目标的花朵必须显示在 HUD 之上，且不能被棋盘容器裁切，靠以下约定保证：
+
+- 浮层 `#flyLayer`（`.fly-layer`）是 `.phone-frame` 的直接子级，且排在 `.game-screen` 之后，`z-index: 50`、`overflow: visible`、`pointer-events: none`
+- HUD（`.hud`）的 `z-index: 1` 只在 `.game-screen` 内部生效；因为 `.fly-layer` 与 `.game-screen` 同属 `.phone-frame` 这一层叠上下文、且 z-index 更高，所以飞行花朵整体盖在 HUD 之上
+- `.tile.is-flying` 用 `position: fixed` + 视口坐标定位，天然不受 `.board-shell { overflow: hidden }` 裁切，飞出棋盘也不会被切掉
+- **易错点**：tile 的宽高是 `width: var(--tile-size)`，而 `--tile-size` 只定义在棋盘层（`.board` / `.tile-layer`）上。花朵被移入 `#flyLayer` 后会丢失该变量继承，导致宽高解析为 0（飞行过程「看不见」）。因此 `flyTile` 必须把起点的实际像素宽高显式写到 inline style，并在 `releaseTileElement` 回收时清理 `width` / `height`
+- 注意：不要为了飞行效果给 `.board-shell` 放开 `overflow`；飞行层级问题应通过 `#flyLayer` 解决，而非改 board-shell
 
 如果只改 JS 或只改 CSS，视觉和逻辑节奏可能错位。
 

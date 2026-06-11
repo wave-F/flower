@@ -5,6 +5,7 @@ export const TILE_KINDS = [
   { key: "violet", label: "Violet", name: "紫藤花" },
   { key: "rose", label: "Rose", name: "玫瑰花" },
   { key: "gold", label: "Gold", name: "金花" },
+  { key: "grass", label: "Grass", name: "杂草" },
 ];
 
 export const TILE_KIND_MAP = Object.fromEntries(TILE_KINDS.map((kind) => [kind.key, kind]));
