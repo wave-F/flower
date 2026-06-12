@@ -15,7 +15,7 @@ import { isCurrentLevelComplete, getRemainingMoves, isHoleCell, prepareLevelStat
 import { findMatchGroups } from "./game/match.js";
 import { createGameState } from "./state/gameState.js";
 import { columnLabel } from "./utils/grid.js";
-import { animateBoardEntry, animateResolution } from "./ui/animations.js";
+import { animateBoardEntry, animateResolution, animateWindmillFusion } from "./ui/animations.js";
 import { fitBoardToViewport, renderBoardSlots } from "./ui/boardLayout.js";
 import { getDomElements } from "./ui/dom.js";
 import { createHudView } from "./ui/hudView.js";
@@ -45,6 +45,7 @@ const PERSISTENT_HINT_TEXT = "点击拔出，下落花朵三连消除";
 
 const WINDMILL_ROW_TYPE = "windmillRow";
 const WINDMILL_COLUMN_TYPE = "windmillColumn";
+const MERGED_WINDMILL_TYPE = "mergedWindmill";
 const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
 const HIVE_TYPE = "hive";
 const HIVE_KIND = { key: "hive", label: "Hive", name: "蜂巢" };
@@ -322,9 +323,14 @@ export function initialize(doc = globalThis.document) {
     }
 
     if (isWindmillTile(tile)) {
+      const mergedWindmillPartner = findAdjacentWindmillPartner(tile, columns, rows);
       hideTutorialGuide();
       if (didCompleteTutorial) {
         showPersistentHint();
+      }
+      if (mergedWindmillPartner) {
+        void processMergedWindmills(tile, mergedWindmillPartner);
+        return;
       }
       void processWindmill(tile);
       return;
@@ -488,15 +494,112 @@ export function initialize(doc = globalThis.document) {
     }
   }
 
-  async function processWindmill(tile) {
+  async function processMergedWindmills(primaryTile, secondaryTile) {
     state.isProcessing = true;
+    state.movesUsed += 1;
     renderHud();
     tileView.syncInteractivity();
 
-    const { columns, rows, tileKinds } = getCurrentLevelSettings();
+    const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
+    const clickedCell = { x: primaryTile.x, y: primaryTile.y };
+    await animateWindmillFusion({
+      primaryTileId: primaryTile.id,
+      secondaryTileId: secondaryTile.id,
+      tileView,
+      onMerged: () => {
+        primaryTile.special = { type: MERGED_WINDMILL_TYPE };
+        tileView.updateTile(primaryTile);
+      },
+    });
+    const specialChain = collectSpecialChain(primaryTile, columns, rows, {
+      suppressedSpecialIds: new Set([secondaryTile.id]),
+      mergedSourceTileIds: new Set([secondaryTile.id]),
+    });
+    hudView.setStatus(
+      "大风车合成",
+      `消耗 1 步，合成清除 3 行 3 列共 ${specialChain.tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
+    );
+
+    const result = applyRemovalsAndCollapse({
+      board: state.board,
+      tilesToRemove: specialChain.tilesToRemove,
+      columns,
+      rows,
+      state,
+      tileKinds,
+      isHole,
+    });
+    result.windmillEffects = specialChain.windmillEffects;
+    result.hiveEffects = specialChain.hiveEffects;
+    const resolution = await animateResolution({
+      result,
+      tileView,
+      removeDuration: REMOVE_DURATION,
+      fallDuration: FALL_DURATION,
+      flyDuration: FLY_DURATION,
+      isGoalKind,
+      getGoalRect: hudView.getGoalSwatchRect,
+      onGoalArrive: handleGoalArrive,
+    });
+
+    const cascadeResult = await resolveBoardMatches("大风车", { clickedCell, previousResult: result });
+    await Promise.all([
+      resolution.goalFlights,
+      ...cascadeResult.goalFlights,
+    ]);
+
+    if (isCurrentLevelComplete(state, getCurrentLevel())) {
+      state.isLevelCompleted = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
+      hudView.showLevelOverlay({
+        title: "关卡完成",
+        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    if (state.movesUsed >= moveLimit) {
+      state.isLevelFailed = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
+      hudView.showLevelOverlay({
+        title: "步数用尽",
+        detail: `${getCurrentLevelLabel()} 未完成目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    state.isProcessing = false;
+    tileView.syncInteractivity();
+    renderHud();
+
+    if (cascadeResult.cascadeCount > 0) {
+      hudView.setStatus("就绪", `大风车触发 ${cascadeResult.cascadeCount} 次连锁`);
+    } else {
+      hudView.setStatus("就绪", `大风车合成清除了 ${result.removedTiles.length} 个格子`);
+    }
+  }
+
+  async function processWindmill(tile) {
+    state.isProcessing = true;
+    state.movesUsed += 1;
+    renderHud();
+    tileView.syncInteractivity();
+
+    const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: tile.x, y: tile.y };
     const specialChain = collectSpecialChain(tile, columns, rows);
-    hudView.setStatus("风车触发", `连锁触发 ${specialChain.triggeredSpecialCount} 个道具，影响 ${specialChain.tilesToRemove.length} 个格子`);
+    hudView.setStatus(
+      "风车触发",
+      `连锁触发 ${specialChain.triggeredSpecialCount} 个道具，影响 ${specialChain.tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
+    );
 
     const result = applyRemovalsAndCollapse({
       board: state.board,
@@ -540,6 +643,20 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
+    if (state.movesUsed >= moveLimit) {
+      state.isLevelFailed = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
+      hudView.showLevelOverlay({
+        title: "步数用尽",
+        detail: `${getCurrentLevelLabel()} 未完成目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
     state.isProcessing = false;
     tileView.syncInteractivity();
     renderHud();
@@ -553,13 +670,17 @@ export function initialize(doc = globalThis.document) {
 
   async function processHive(tile) {
     state.isProcessing = true;
+    state.movesUsed += 1;
     renderHud();
     tileView.syncInteractivity();
 
-    const { columns, rows, tileKinds } = getCurrentLevelSettings();
+    const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: tile.x, y: tile.y };
     const specialChain = collectSpecialChain(tile, columns, rows);
-    hudView.setStatus("蜂巢触发", `连锁触发 ${specialChain.triggeredSpecialCount} 个道具，影响 ${specialChain.tilesToRemove.length} 个格子`);
+    hudView.setStatus(
+      "蜂巢触发",
+      `连锁触发 ${specialChain.triggeredSpecialCount} 个道具，影响 ${specialChain.tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
+    );
 
     const result = applyRemovalsAndCollapse({
       board: state.board,
@@ -598,6 +719,20 @@ export function initialize(doc = globalThis.document) {
       hudView.showLevelOverlay({
         title: "关卡完成",
         detail: `${getCurrentLevelLabel()} 已达成全部目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    if (state.movesUsed >= moveLimit) {
+      state.isLevelFailed = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
+      hudView.showLevelOverlay({
+        title: "步数用尽",
+        detail: `${getCurrentLevelLabel()} 未完成目标`,
         actionLabel: getActionButtonLabel(),
       });
       return;
@@ -677,7 +812,9 @@ export function initialize(doc = globalThis.document) {
   }
 
   function isWindmillTile(tile) {
-    return tile.special?.type === WINDMILL_ROW_TYPE || tile.special?.type === WINDMILL_COLUMN_TYPE;
+    return tile.special?.type === WINDMILL_ROW_TYPE
+      || tile.special?.type === WINDMILL_COLUMN_TYPE
+      || tile.special?.type === MERGED_WINDMILL_TYPE;
   }
 
   function isHiveTile(tile) {
@@ -744,7 +881,69 @@ export function initialize(doc = globalThis.document) {
     return candidates[Math.floor(Math.random() * candidates.length)] ?? null;
   }
 
+  function findAdjacentWindmillPartner(tile, columns, rows) {
+    const neighborOffsets = [
+      { x: -1, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: 0, y: 1 },
+    ];
+
+    for (const offset of neighborOffsets) {
+      const nextX = tile.x + offset.x;
+      const nextY = tile.y + offset.y;
+      if (nextX < 0 || nextX >= columns || nextY < 0 || nextY >= rows) {
+        continue;
+      }
+
+      const neighbor = state.board[nextY]?.[nextX] ?? null;
+      if (isWindmillTile(neighbor)) {
+        return neighbor;
+      }
+    }
+
+    return null;
+  }
+
+  function collectMergedWindmillTargets(centerTile, columns, rows) {
+    const targetsById = new Map();
+
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      const targetRow = centerTile.y + offsetY;
+      if (targetRow < 0 || targetRow >= rows) {
+        continue;
+      }
+
+      for (let x = 0; x < columns; x += 1) {
+        const tile = state.board[targetRow]?.[x] ?? null;
+        if (tile) {
+          targetsById.set(tile.id, tile);
+        }
+      }
+    }
+
+    for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+      const targetColumn = centerTile.x + offsetX;
+      if (targetColumn < 0 || targetColumn >= columns) {
+        continue;
+      }
+
+      for (let y = 0; y < rows; y += 1) {
+        const tile = state.board[y]?.[targetColumn] ?? null;
+        if (tile) {
+          targetsById.set(tile.id, tile);
+        }
+      }
+    }
+
+    return [...targetsById.values()];
+  }
+
   function getWindmillTargets(tile, columns, rows) {
+    if (tile.special.type === MERGED_WINDMILL_TYPE) {
+      return collectMergedWindmillTargets(tile, columns, rows);
+    }
+
     const targets = [];
 
     if (tile.special.type === WINDMILL_ROW_TYPE) {
@@ -767,7 +966,12 @@ export function initialize(doc = globalThis.document) {
     return targets;
   }
 
-  function collectSpecialChain(sourceTile, columns, rows) {
+  function collectSpecialChain(
+    sourceTile,
+    columns,
+    rows,
+    { suppressedSpecialIds = new Set(), mergedSourceTileIds = new Set() } = {},
+  ) {
     const tilesById = new Map();
     const claimedTargetIds = new Set();
     const queuedSpecialTiles = [sourceTile];
@@ -795,7 +999,12 @@ export function initialize(doc = globalThis.document) {
         if (!target.special) {
           claimedTargetIds.add(target.id);
         }
-        if (target.special && !triggeredSpecialIds.has(target.id) && !queuedSpecialIds.has(target.id)) {
+        if (
+          target.special
+          && !suppressedSpecialIds.has(target.id)
+          && !triggeredSpecialIds.has(target.id)
+          && !queuedSpecialIds.has(target.id)
+        ) {
           queuedSpecialIds.add(target.id);
           triggeredByTileId.set(target.id, currentTile.id);
           queuedSpecialTiles.push(target);
@@ -815,6 +1024,7 @@ export function initialize(doc = globalThis.document) {
           originX: currentTile.x,
           originY: currentTile.y,
           triggeredByTileId: triggeredByTileId.get(currentTile.id) ?? null,
+          mergedSourceTileIds: currentTile.id === sourceTile.id ? new Set(mergedSourceTileIds) : new Set(),
           targetTileIds: new Set(targets.map((target) => target.id)),
         });
       } else if (isHiveTile(currentTile)) {

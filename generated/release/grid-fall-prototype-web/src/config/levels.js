@@ -44,7 +44,7 @@ export const LEVELS = [
     id: 3,
     columns: 6,
     rows: 6,
-    moveLimit: 10,
+    moveLimit: 8,
     tileKinds: [1, 2, 3, 4, 5,0],
     goals: [
       { kind: 1, count: 8 },
@@ -55,7 +55,7 @@ export const LEVELS = [
     id: 4,
     columns: 7,
     rows: 7,
-    moveLimit: 12,
+    moveLimit: 10,
     tileKinds: [1, 2, 3, 4, 5, 6],
     goals: [
       { kind: 6, count: 10 },
@@ -66,7 +66,7 @@ export const LEVELS = [
     id: 5,
     columns: 8,
     rows: 8,
-    moveLimit: 14,
+    moveLimit: 12,
     tileKinds: [1, 2, 3, 4, 5, 6],
     goals: [
       { kind: 5, count: 10 },
@@ -78,7 +78,7 @@ export const LEVELS = [
     id: 6,
     columns: 8,
     rows: 8,
-    moveLimit: 16,
+    moveLimit: 12,
     tileKinds: [1, 2, 3, 4, 5, 6],
     holes: [
       [3, 0],
@@ -100,7 +100,7 @@ export const LEVELS = [
     id: 7,
     columns: 8,
     rows: 9,
-    moveLimit: 18,
+    moveLimit: 12,
     tileKinds: [1, 2, 3, 4, 5, 6],
     holes: [
       [0, 4],
@@ -123,7 +123,7 @@ export const LEVELS = [
     id: 8,
     columns: 8,
     rows: 10,
-    moveLimit: 20,
+    moveLimit: 14,
     tileKinds: [1, 2, 3, 4, 5, 6,7],
     holes: [
       [3, 0],
@@ -148,7 +148,7 @@ export const LEVELS = [
     id: 9,
     columns: 8,
     rows: 10,
-    moveLimit: 20,
+    moveLimit: 14,
     tileKinds: [1, 2, 3, 4, 5, 6, 7],
     holes: [
       [2, 1],
@@ -179,7 +179,7 @@ export const LEVELS = [
     id: 10,
     columns: 8,
     rows: 10,
-    moveLimit: 20,
+    moveLimit: 14,
     tileKinds: [1, 2, 3, 4, 5, 6, 7],
     holes: [
       [3, 0],
