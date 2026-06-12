@@ -40,17 +40,25 @@ export async function animateResolution({
     const effectPromises = new Map();
     const animatedTileIds = new Set();
 
-    const launchSpecialEffect = (effect) => {
+    const launchSpecialEffect = (effect, ancestorEffectIds = new Set()) => {
       if (!effect || effectPromises.has(effect.originTileId)) {
-        return effectPromises.get(effect?.originTileId) ?? Promise.resolve();
+        // 连锁里若回指到祖先特效，只复用已启动动画，不再等待它，避免形成 Promise 环。
+        if (!effect || ancestorEffectIds.has(effect.originTileId)) {
+          return Promise.resolve();
+        }
+
+        return effectPromises.get(effect.originTileId) ?? Promise.resolve();
       }
 
+      const nextAncestorEffectIds = new Set(ancestorEffectIds);
+      nextAncestorEffectIds.add(effect.originTileId);
       const promise = effect.specialKind === "windmill"
         ? animateWindmillEffect({
           effect,
           removedTileById,
           effectByOriginId,
           launchSpecialEffect,
+          ancestorEffectIds: nextAncestorEffectIds,
           animatedTileIds,
           flights,
           tileView,
@@ -65,6 +73,7 @@ export async function animateResolution({
           hiveEffect: effect,
           effectByOriginId,
           launchSpecialEffect,
+          ancestorEffectIds: nextAncestorEffectIds,
           animatedTileIds,
           flights,
           tileView,
@@ -135,6 +144,7 @@ async function animateWindmillEffect({
   removedTileById,
   effectByOriginId,
   launchSpecialEffect,
+  ancestorEffectIds,
   animatedTileIds,
   flights,
   tileView,
@@ -160,7 +170,7 @@ async function animateWindmillEffect({
 
     const childEffect = effectByOriginId.get(targetId);
     if (childEffect) {
-      childEffectPromises.push(launchSpecialEffect(childEffect));
+      childEffectPromises.push(launchSpecialEffect(childEffect, ancestorEffectIds));
       continue;
     }
 
@@ -206,6 +216,7 @@ async function animateHiveEffect({
   hiveEffect,
   effectByOriginId,
   launchSpecialEffect,
+  ancestorEffectIds,
   animatedTileIds,
   flights,
   tileView,
@@ -277,7 +288,7 @@ async function animateHiveEffect({
         delay: beeDelay,
         onArrive: () => {
           if (childEffect) {
-            childEffectPromises.push(launchSpecialEffect(childEffect));
+            childEffectPromises.push(launchSpecialEffect(childEffect, ancestorEffectIds));
             resolve();
             return;
           }
