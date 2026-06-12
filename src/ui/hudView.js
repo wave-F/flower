@@ -30,6 +30,8 @@ export function createHudView({ elements, appTitle }) {
 
   function renderGoalList(goals, goalProgress) {
     elements.goalListElement.innerHTML = "";
+    elements.goalListElement.dataset.goalCount = String(goals.length);
+    elements.goalListElement.dataset.goalLayout = goals.length <= 2 ? "single" : "double";
     const fragment = document.createDocumentFragment();
 
     for (const goal of goals) {
