@@ -1,8 +1,7 @@
+import { WINDMILL_TIMINGS } from "../config/windmillTimings.js";
 import { wait } from "../utils/time.js";
 
 const GROUP_FLY_STAGGER = 120;
-const FIREWORK_POP_DURATION = 360;
-const FIREWORK_BURST_DURATION = 560;
 
 export async function animateResolution({
   result,
@@ -15,7 +14,8 @@ export async function animateResolution({
   onGoalArrive,
 }) {
   const removedTileGroups = result.removedTileGroups?.length ? result.removedTileGroups : [result.removedTiles];
-  const fireworkEffect = result.fireworkEffect ?? null;
+  const windmillEffect = result.windmillEffect ?? null;
+  const windmillTimings = WINDMILL_TIMINGS;
   const triggeredSpecialIds = new Set((result.triggeredSpecialTiles ?? []).map((tile) => tile.id));
   const flights = [];
 
@@ -25,18 +25,22 @@ export async function animateResolution({
     for (const tile of group) {
       const isGoalTile = isGoalKind?.(tile.kind.key);
 
-      if (fireworkEffect && triggeredSpecialIds.has(tile.id)) {
+      if (windmillEffect && triggeredSpecialIds.has(tile.id)) {
         setTimeout(() => {
-          tileView.popTile(tile.id, { duration: FIREWORK_POP_DURATION });
+          tileView.popTile(tile.id, {
+            duration: getWindmillTotalDuration(windmillTimings),
+            spinUpDuration: windmillTimings.spinUpDuration,
+            burstDuration: windmillTimings.burstDuration,
+          });
         }, delay);
         continue;
       }
 
-      if (fireworkEffect) {
-        const direction = getFireworkBurstDirection(tile, fireworkEffect);
+      if (windmillEffect) {
+        const direction = getWindmillBurstDirection(tile, windmillEffect);
         const runBurst = (resolve) => {
           tileView.burstTile(tile.id, {
-            duration: FIREWORK_BURST_DURATION,
+            duration: windmillTimings.flowerFlyDuration,
             directionX: direction.x,
             directionY: direction.y,
             onArrive: resolve,
@@ -50,12 +54,12 @@ export async function animateResolution({
                 onGoalArrive?.(tile);
                 resolve();
               });
-            }, delay);
+            }, delay + windmillTimings.spinUpDuration);
           }));
           continue;
         }
 
-        setTimeout(() => runBurst(), delay);
+        setTimeout(() => runBurst(), delay + windmillTimings.spinUpDuration);
         continue;
       }
 
@@ -81,7 +85,9 @@ export async function animateResolution({
     }
   });
 
-  const effectDuration = fireworkEffect ? FIREWORK_BURST_DURATION : removeDuration;
+  const effectDuration = windmillEffect
+    ? getWindmillTotalDuration(windmillTimings)
+    : removeDuration;
   await wait(effectDuration + Math.max(0, removedTileGroups.length - 1) * GROUP_FLY_STAGGER);
 
   // 下落与花朵飞散/飞行并行，不被飞行时长阻塞
@@ -93,17 +99,21 @@ export async function animateResolution({
   };
 }
 
-function getFireworkBurstDirection(tile, fireworkEffect) {
-  if (fireworkEffect.type === "fireworkRow") {
+function getWindmillTotalDuration(timings) {
+  return timings.spinUpDuration + timings.burstDuration + timings.fadeDuration;
+}
+
+function getWindmillBurstDirection(tile, windmillEffect) {
+  if (windmillEffect.type === "windmillRow") {
     return {
-      x: tile.x < fireworkEffect.originX ? -1 : 1,
+      x: tile.x < windmillEffect.originX ? -1 : 1,
       y: (Math.random() - 0.5) * 0.18,
     };
   }
 
   return {
     x: (Math.random() - 0.5) * 0.18,
-    y: tile.y < fireworkEffect.originY ? -1 : 1,
+    y: tile.y < windmillEffect.originY ? -1 : 1,
   };
 }
 

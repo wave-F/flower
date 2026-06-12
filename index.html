@@ -11,6 +11,7 @@
       <section class="phone-frame">
         <section class="game-screen">
           <div id="fpsCounter" class="fps-counter" aria-hidden="true">FPS: --</div>
+          <button id="debugWindmillButton" class="debug-windmill-button" type="button">测试风车</button>
           <header class="hud">
             <div class="hud-bar">
               <div class="hero-badge" aria-hidden="true">
@@ -38,6 +39,7 @@
             <img id="tutorialHand" class="tutorial-hand" src="./assets/HandPointer.png" alt="" />
             <div id="tutorialTip" class="tutorial-tip">点击拔出，下落花朵三连消除！</div>
           </div>
+          <div id="persistentHint" class="persistent-hint" hidden>点击拔出，下落花朵三连消除</div>
           <div id="levelOverlay" class="level-overlay" role="dialog" aria-modal="true" aria-labelledby="levelOverlayTitle" hidden>
             <div class="level-overlay-card">
               <h2 id="levelOverlayTitle" class="level-overlay-title">关卡完成</h2>
@@ -49,7 +51,6 @@
         <div id="flyLayer" class="fly-layer" aria-hidden="true"></div>
       </section>
     </main>
-
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

@@ -38,11 +38,14 @@ const FIRST_LEVEL_TUTORIAL = {
   x: 2,
   y: 2,
   kind: "grass",
-  tip: "点击拔出，下落花朵三连消除！",
+  tip: "点击拔出杂草，下落花朵三连消除",
 };
 
-const FIREWORK_ROW_TYPE = "fireworkRow";
-const FIREWORK_COLUMN_TYPE = "fireworkColumn";
+const PERSISTENT_HINT_TEXT = "点击拔出，下落花朵三连消除";
+
+const WINDMILL_ROW_TYPE = "windmillRow";
+const WINDMILL_COLUMN_TYPE = "windmillColumn";
+const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
 
 export function initialize(doc = globalThis.document) {
   if (!doc) {
@@ -76,6 +79,7 @@ export function initialize(doc = globalThis.document) {
 
   elements.boardShellElement.addEventListener("click", onBoardClick);
   elements.nextLevelButtonElement.addEventListener("click", onNextLevelButtonClick);
+  elements.debugWindmillButtonElement.addEventListener("click", onDebugWindmillButtonClick);
   window.addEventListener("resize", onViewportResize);
   window.addEventListener("orientationchange", onViewportResize);
 
@@ -235,13 +239,21 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
-    if (isFireworkTile(tile)) {
+    const didCompleteTutorial = isTutorialVisible && isTutorialTarget(tile);
+
+    if (isWindmillTile(tile)) {
       hideTutorialGuide();
-      void processFirework(tile);
+      if (didCompleteTutorial) {
+        showPersistentHint();
+      }
+      void processWindmill(tile);
       return;
     }
 
     hideTutorialGuide();
+    if (didCompleteTutorial) {
+      showPersistentHint();
+    }
 
     void processTurn(tile);
   }
@@ -297,6 +309,11 @@ export function initialize(doc = globalThis.document) {
 
     isTutorialVisible = false;
     elements.tutorialGuideElement.hidden = true;
+  }
+
+  function showPersistentHint() {
+    elements.persistentHintElement.textContent = PERSISTENT_HINT_TEXT;
+    elements.persistentHintElement.hidden = false;
   }
 
   function getTutorialTargetTile() {
@@ -396,16 +413,16 @@ export function initialize(doc = globalThis.document) {
     }
   }
 
-  async function processFirework(tile) {
+  async function processWindmill(tile) {
     state.isProcessing = true;
     renderHud();
     tileView.syncInteractivity();
 
     const { columns, rows, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: tile.x, y: tile.y };
-    const targets = getFireworkTargets(tile, columns, rows);
-    const directionLabel = tile.special.type === FIREWORK_ROW_TYPE ? "横向" : "纵向";
-    hudView.setStatus("礼花触发", `${directionLabel}礼花清除 ${targets.length} 个格子`);
+    const targets = getWindmillTargets(tile, columns, rows);
+    const directionLabel = tile.special.type === WINDMILL_ROW_TYPE ? "横向" : "纵向";
+    hudView.setStatus("风车触发", `${directionLabel}风车吹开 ${targets.length} 个格子`);
 
     const result = applyRemovalsAndCollapse({
       board: state.board,
@@ -415,7 +432,7 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds,
     });
-    result.fireworkEffect = {
+    result.windmillEffect = {
       type: tile.special.type,
       originX: tile.x,
       originY: tile.y,
@@ -431,7 +448,7 @@ export function initialize(doc = globalThis.document) {
       onGoalArrive: handleGoalArrive,
     });
 
-    const cascadeResult = await resolveBoardMatches("礼花", { clickedCell, previousResult: result });
+    const cascadeResult = await resolveBoardMatches("风车", { clickedCell, previousResult: result });
     await Promise.all([
       resolution.goalFlights,
       ...cascadeResult.goalFlights,
@@ -456,9 +473,9 @@ export function initialize(doc = globalThis.document) {
     renderHud();
 
     if (cascadeResult.cascadeCount > 0) {
-      hudView.setStatus("就绪", `礼花触发 ${cascadeResult.cascadeCount} 次连锁`);
+      hudView.setStatus("就绪", `风车触发 ${cascadeResult.cascadeCount} 次连锁`);
     } else {
-      hudView.setStatus("就绪", "礼花未形成后续连通块消除");
+      hudView.setStatus("就绪", "风车未形成后续连通块消除");
     }
   }
 
@@ -523,14 +540,56 @@ export function initialize(doc = globalThis.document) {
     };
   }
 
-  function isFireworkTile(tile) {
-    return tile.special?.type === FIREWORK_ROW_TYPE || tile.special?.type === FIREWORK_COLUMN_TYPE;
+  function isWindmillTile(tile) {
+    return tile.special?.type === WINDMILL_ROW_TYPE || tile.special?.type === WINDMILL_COLUMN_TYPE;
   }
 
-  function getFireworkTargets(tile, columns, rows) {
+  function onDebugWindmillButtonClick() {
+    if (state.isProcessing || state.isLevelCompleted || state.isLevelFailed) {
+      return;
+    }
+
+    const { columns, rows } = getCurrentLevelSettings();
+    const target = pickRandomWindmillTestTarget(columns, rows);
+    if (!target) {
+      hudView.setStatus("测试风车", "当前没有可替换的普通花");
+      return;
+    }
+
+    target.kind = WINDMILL_KIND;
+    target.special = {
+      type: Math.random() < 0.5 ? WINDMILL_ROW_TYPE : WINDMILL_COLUMN_TYPE,
+    };
+    tileView.updateTile(target);
+    hudView.setStatus("测试风车", `已在 ${columnLabel(target.x)} 列 ${target.y + 1} 行生成风车`);
+  }
+
+  function pickRandomWindmillTestTarget(columns, rows) {
+    const flowerTiles = [];
+    const fallbackTiles = [];
+
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < columns; x += 1) {
+        const tile = state.board[y]?.[x] ?? null;
+        if (!tile || tile.special) {
+          continue;
+        }
+
+        fallbackTiles.push(tile);
+        if (tile.kind.key !== "grass") {
+          flowerTiles.push(tile);
+        }
+      }
+    }
+
+    const candidates = flowerTiles.length > 0 ? flowerTiles : fallbackTiles;
+    return candidates[Math.floor(Math.random() * candidates.length)] ?? null;
+  }
+
+  function getWindmillTargets(tile, columns, rows) {
     const targets = [];
 
-    if (tile.special.type === FIREWORK_ROW_TYPE) {
+    if (tile.special.type === WINDMILL_ROW_TYPE) {
       for (let x = 0; x < columns; x += 1) {
         const target = state.board[tile.y]?.[x] ?? null;
         if (target) {

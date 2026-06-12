@@ -83,6 +83,15 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     releaseTileElement(element);
   }
 
+  function updateTile(tile) {
+    const element = tileElements.get(tile.id);
+    if (!element) {
+      return;
+    }
+
+    decorateTileElement(element, tile);
+  }
+
   function flyTile(tileId, { duration, targetRect = null, onArrive } = {}) {
     const element = tileElements.get(tileId);
     if (!element) {
@@ -133,7 +142,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     });
   }
 
-  function popTile(tileId, { duration, onArrive } = {}) {
+  function popTile(tileId, { duration, spinUpDuration = duration * 0.36, burstDuration = duration * 0.4, onArrive } = {}) {
     const element = tileElements.get(tileId);
     if (!element) {
       onArrive?.();
@@ -143,11 +152,14 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     tileElements.delete(tileId);
     element.disabled = true;
     element.classList.add("is-popping");
+    const spinUpOffset = Math.min(0.8, Math.max(0.1, spinUpDuration / duration));
+    const burstEndOffset = Math.min(0.94, Math.max(spinUpOffset + 0.05, (spinUpDuration + burstDuration) / duration));
 
     const animation = element.animate([
-      { opacity: 1, transform: "scale(1)" },
-      { opacity: 1, transform: "scale(1.32)", offset: 0.48 },
-      { opacity: 0, transform: "scale(0.18) rotate(18deg)" },
+      { opacity: 1, transform: "scale(1)", easing: "cubic-bezier(0.22, 0, 0.24, 1)" },
+      { opacity: 1, transform: "scale(1.2) rotate(280deg)", offset: spinUpOffset, easing: "linear" },
+      { opacity: 1, transform: "scale(1.2) rotate(700deg)", offset: burstEndOffset, easing: "cubic-bezier(0.34, 0, 0.72, 1)" },
+      { opacity: 0, transform: "scale(0.18) rotate(820deg)" },
     ], {
       duration,
       easing: "cubic-bezier(0.2, 0.9, 0.2, 1)",
@@ -411,12 +423,12 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
   }
 
   function getSpecialTileLabel(type) {
-    if (type === "fireworkRow") {
-      return "横向礼花，";
+    if (type === "windmillRow") {
+      return "横向风车，";
     }
 
-    if (type === "fireworkColumn") {
-      return "纵向礼花，";
+    if (type === "windmillColumn") {
+      return "纵向风车，";
     }
 
     return "";
@@ -454,5 +466,6 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     setTileBoardPosition,
     syncInteractivity,
     unmountTile,
+    updateTile,
   };
 }

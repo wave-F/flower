@@ -1,9 +1,9 @@
 import { findMatches } from "./match.js";
 
 const FOUR_MATCH_SIZE = 4;
-const FIREWORK_KIND = { key: "firework", label: "Firework", name: "礼花" };
-const FIREWORK_ROW_TYPE = "fireworkRow";
-const FIREWORK_COLUMN_TYPE = "fireworkColumn";
+const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
+const WINDMILL_ROW_TYPE = "windmillRow";
+const WINDMILL_COLUMN_TYPE = "windmillColumn";
 
 export function createTile(state, x, y, kind) {
   return {
@@ -128,8 +128,8 @@ export function applyRemovalsAndCollapse({
     }
 
     if (specialSourceTile && removedGroup.length === FOUR_MATCH_SIZE) {
-      const specialTile = createTile(state, specialSourceTile.x, specialSourceTile.y, FIREWORK_KIND);
-      specialTile.special = { type: getFourMatchFireworkType(group) };
+      const specialTile = createTile(state, specialSourceTile.x, specialSourceTile.y, WINDMILL_KIND);
+      specialTile.special = { type: getFourMatchWindmillType(group) };
       board[specialTile.y][specialTile.x] = specialTile;
       createdSpecialTiles.push({ tile: specialTile, fromRow: specialSourceTile.y });
     }
@@ -188,21 +188,21 @@ function pickStableTile(group) {
   })[0];
 }
 
-function getFourMatchFireworkType(group) {
+function getFourMatchWindmillType(group) {
   const xs = group.map((tile) => tile.x);
   const ys = group.map((tile) => tile.y);
   const width = Math.max(...xs) - Math.min(...xs) + 1;
   const height = Math.max(...ys) - Math.min(...ys) + 1;
 
   if (width > height) {
-    return FIREWORK_COLUMN_TYPE;
+    return WINDMILL_COLUMN_TYPE;
   }
 
   if (height > width) {
-    return FIREWORK_ROW_TYPE;
+    return WINDMILL_ROW_TYPE;
   }
 
-  return Math.random() < 0.5 ? FIREWORK_ROW_TYPE : FIREWORK_COLUMN_TYPE;
+  return Math.random() < 0.5 ? WINDMILL_ROW_TYPE : WINDMILL_COLUMN_TYPE;
 }
 
 function collapseBoard({ board, columns, rows, state, tileKinds }) {

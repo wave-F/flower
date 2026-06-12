@@ -71,7 +71,9 @@
 #### `index.html`
 - 页面入口
 - 提供 HUD、棋盘容器、关卡结算覆盖层 `#levelOverlay`（内含「下一关 / 重试」按钮 `#nextLevelButton`）
+- 提供右上角调试按钮 `#debugWindmillButton`，用于随机把一个普通花 tile 转成风车，方便测试 4 消道具效果
 - 提供新手引导层 `#tutorialGuide`，包含手指图片 `#tutorialHand` 和提示文案 `#tutorialTip`
+- 提供底部常驻提示 `#persistentHint`，在第 1 关引导完成后显示“点击拔出，下落花朵三连消除”
 - 顶层飞行浮层 `#flyLayer`：作为 `.phone-frame` 的直接子级，专门承载「飞向目标」的花朵，使其层级高于 HUD（详见「飞行层级」）
 - 通过 `<script type="module">` 加载 `src/main.js`
 
@@ -92,7 +94,8 @@
 - 初始化 DOM、状态、视图模块
 - 监听点击、resize、orientationchange
 - 驱动整局流程：点击 -> 移除 -> 掉落 -> 连锁 -> 成功/失败判定
-- 管理第 1 关新手引导：开场入场动画结束后，引导玩家点击 0-based 坐标 `(2, 2)` 的杂草；点击其他 tile 会被忽略，点击目标后隐藏引导并正常结算
+- 管理调试按钮：点击 `#debugWindmillButton` 时，随机挑选一个普通花 tile 转成横向或纵向风车，并刷新对应 tile 视觉；该操作不消耗步数，只用于测试
+- 管理第 1 关新手引导：开场入场动画结束后，引导玩家点击 0-based 坐标 `(2, 2)` 的杂草；点击其他 tile 会被忽略，点击目标后隐藏引导、显示底部常驻提示并正常结算
 
 ### `src/config/`
 
@@ -126,6 +129,12 @@
 - 每关的目标花朵种类与数量 `goals` (使用数字 ID)
 - 当前关卡尺寸递进：`5x5` -> `6x6` -> `7x7` -> `8x8` -> `8x9` -> `8x10`；宽度上限为 `8`，高度上限为 `10`
 - 后续关卡主要通过增加目标种类、提高目标数量、适当增加步数来提高难度
+
+#### `src/config/windmillTimings.js`
+- 定义风车触发动画时间：`spinUpDuration`（加速旋转）、`burstDuration`（吹风持续）、`flowerFlyDuration`（花朵飞出动画）、`fadeDuration`（减速消失）
+- 当前默认值为 `200 / 300 / 1000 / 80` ms
+- 暴露 `applyWindmillTimings(...)`，方便后续重新接入调试工具或运行时配置
+
 ### `src/state/`
 
 #### `src/state/gameState.js`
@@ -139,7 +148,7 @@
 - 生成初始棋盘
 - 执行移除、下落、补位
 - `applyRemovalsAndCollapse(...)` 返回 `removedTiles` 和 `removedTileGroups`：前者供总数/兼容逻辑使用，后者保留消除组，供动画按组错峰起飞
-- 精确 4 个普通同色连通块消除时，4 个原 tile 全部正常移除并飞走，同时创建 1 个新的礼花道具；横向形状生成纵向礼花 `special.type = "fireworkColumn"`，纵向形状生成横向礼花 `special.type = "fireworkRow"`，宽高相同则随机
+- 精确 4 个普通同色连通块消除时，4 个原 tile 全部正常移除并飞走，同时创建 1 个新的风车道具；横向形状生成纵向风车 `special.type = "windmillColumn"`，纵向形状生成横向风车 `special.type = "windmillRow"`，宽高相同则随机
 - 提供按 id 查找 tile 的能力
 
 这是“棋盘数据变化”的核心模块。
@@ -161,7 +170,7 @@
 ### `src/ui/`
 
 #### `src/ui/dom.js`
-- 集中获取页面上必须存在的 DOM 节点（含棋盘、tile 层、目标列表、顶层飞行浮层 `#flyLayer`、新手引导层 `#tutorialGuide`）
+- 集中获取页面上必须存在的 DOM 节点（含棋盘、tile 层、目标列表、顶层飞行浮层 `#flyLayer`、调试按钮 `#debugWindmillButton`、新手引导层 `#tutorialGuide`、底部常驻提示 `#persistentHint`）
 - 如果关键节点缺失，尽早报错
 
 #### `src/ui/boardLayout.js`
@@ -175,9 +184,10 @@
 - 负责 tile 的位置更新与交互状态同步
 - 负责入场、补位等与棋盘坐标的转换
 - `growTileIntoBoard(tileId, { duration, delay, column, row, onArrive })`：开场入场动画使用；tile 固定在最终棋盘格，从 `scale(0)` / 透明状态原地放大淡入，表现成从土里长出来
+- `updateTile(tile)`：在不改变 tile DOM 位置的情况下重新装饰元素；当前用于调试按钮把普通花直接转成风车
 - `flyTile(tileId, { duration, targetRect, onArrive })`：统一处理消除后的花朵飞行；目标花传入 `targetRect` 后沿三次贝塞尔曲线收束到 HUD 目标图标，非目标花不传 `targetRect`，沿同一套贝塞尔曲线飞向屏幕外并淡出
 - `flyTileByBezier(...)`：JS 逐帧采样 cubic Bezier，按每朵花随机的控制点、旋转、缩放呼吸感和透明度更新 inline `transform` / `opacity`；用于消除飞出，不再依赖 CSS `transition` 或 `@keyframes` 描述飞行路径
-- `popTile(...)` / `burstTile(...)`：礼花触发专用表现。礼花道具原地放大爆开后消失，不走普通飞花路径；被礼花清除的行/列花朵会沿横向或纵向吹散飞出
+- `popTile(...)` / `burstTile(...)`：风车触发专用表现。风车道具先原地放大到约 1.2 倍并在约 0.5 秒内加速旋转，随后在行/列花朵吹散期间保持匀速旋转，吹散结束后再减速、缩小并渐隐；风车本身不走普通飞花路径
 - `liftTileToFlyLayer`：负责把元素接管到浮层并固定像素宽高/位置，避免 HUD 遮挡和棋盘裁切
 - 移入 `#flyLayer` 的目的：飞行花朵需要盖在 HUD 之上且不被 `.board-shell` 的 `overflow:hidden` 裁切（详见下文「飞行层级」）
 - `getBoardMetrics()` 暴露当前棋盘布局快照；入场、下落、补位、resize 批量定位时应复用同一份 metrics，避免每个 tile 都重复触发 `getBoundingClientRect()` / `getComputedStyle()`
@@ -262,12 +272,12 @@
     name: string,
   },
   special?: {
-    type: "fireworkRow" | "fireworkColumn",
+    type: "windmillRow" | "windmillColumn",
   }
 }
 ```
 
-`special.type = "fireworkRow" | "fireworkColumn"` 表示 4 消生成的礼花道具。它是新创建的 tile，不复用原 4 消中的某朵花；礼花不参与普通同色正交连通检测。玩家点击礼花不消耗步数，`fireworkRow` 清除整行，`fireworkColumn` 清除整列，然后继续执行下落补位与后续连锁。礼花触发时道具本身原地爆开消失，不走普通飞花逻辑；对应行/列上的花会沿礼花方向被吹散。
+`special.type = "windmillRow" | "windmillColumn"` 表示 4 消生成的风车道具。它是新创建的 tile，不复用原 4 消中的某朵花；风车不参与普通同色正交连通检测。玩家点击风车不消耗步数，`windmillRow` 清除整行，`windmillColumn` 清除整列，然后继续执行下落补位与后续连锁。风车触发时道具本身先原地放大到约 1.2 倍并在 `spinUpDuration` 内加速旋转；对应行/列上的花随后沿风车方向被吹散，花朵飞出动画使用独立的 `flowerFlyDuration`，不再复用吹风持续时间；吹散期间风车保持匀速旋转，吹风结束后风车再减速、缩小并渐隐。下落补位只等待风车自身结束，即 `spinUpDuration + burstDuration + fadeDuration`，不等待花朵飞出动画结束。
 
 ### Board
 
@@ -298,7 +308,7 @@
 6. 如果有连锁则继续结算，并继续收集每轮目标花的 `goalFlights`
 7. 所有棋盘连锁结束后，等待已收集的目标花飞行命中，再更新成功/失败状态
 
-精确 4 消的特殊处理：如果某次自动连锁中的消除组由 4 个普通同色 tile 组成，棋盘会先移除全部 4 个原 tile，再创建新的礼花道具。礼花生成槽位优先选择上一轮刚下落/补位且参与该 4 消的 tile 位置；如果有多个候选，则选离本回合玩家点击位置最近的候选；如果没有移动候选，再回退到组内偏下且靠中的稳定位置。礼花方向按 4 消形状决定：横向更多生成纵向清除，纵向更多生成横向清除，宽高相同随机。
+精确 4 消的特殊处理：如果某次自动连锁中的消除组由 4 个普通同色 tile 组成，棋盘会先移除全部 4 个原 tile，再创建新的风车道具。风车生成槽位优先选择上一轮刚下落/补位且参与该 4 消的 tile 位置；如果有多个候选，则选离本回合玩家点击位置最近的候选；如果没有移动候选，再回退到组内偏下且靠中的稳定位置。风车方向按 4 消形状决定：横向更多生成纵向清除，纵向更多生成横向清除，宽高相同随机。
 
 连锁循环最多执行 `MAX_CASCADE_COUNT` 次。达到上限后会停止继续自动结算，防止极端随机补位让单回合长时间占用交互流程。
 
@@ -331,7 +341,7 @@
 - `src/game/board.js`：处理特殊块触发后的移除规则
 - `src/ui/animations.js`：补特殊表现
 
-当前已内联支持 4 消礼花 `fireworkRow` / `fireworkColumn`，尚未建立专门的 `specialTiles.js`。后续如果特殊块变多，再单独拆模块。
+当前已内联支持 4 消风车 `windmillRow` / `windmillColumn`，尚未建立专门的 `specialTiles.js`。后续如果特殊块变多，再单独拆模块。
 
 ### 新增道具 Add Boosters
 
