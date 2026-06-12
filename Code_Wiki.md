@@ -81,12 +81,13 @@
 
 #### `index.html`
 - 页面入口。
-- 提供 HUD、棋盘容器、结算弹层、调试按钮、新手引导层、飞行层 `#flyLayer`。
+- 提供 loading 启动层、HUD、棋盘容器、结算弹层、调试按钮、新手引导层、飞行层 `#flyLayer`。
 - 右上角固定调试区 `global-debug-actions` 包含风车测试、蜂巢测试、选关面板；选关面板由 `#debugLevelPickerButton`、`#debugLevelPanel`、`#debugLevelSelect`、`#debugLevelJumpButton` 组成。
 - 通过 `<script type="module">` 加载 `src/main.js`。
 
 #### `styles.css`
 - 全局视觉样式。
+- 包含首屏 loading overlay 与进度条样式。
 - 棋盘、格子、tile、特殊块、飞行动画的样式定义。
 - 负责移动端适配和整体页面布局。
 
@@ -102,6 +103,7 @@
 
 #### `src/main.js`
 - 应用启动入口。
+- 新增 bootstrap 启动门：先预加载首屏必需图片，关闭 loading overlay 后再调用 `initialize()`，保留首屏棋盘入场动画可见。
 - 初始化状态、DOM、HUD、tileView、布局。
 - 处理玩家点击、特殊块点击、关卡重置、切关。
 - 驱动主流程：点击 -> 移除 -> 动画 -> 连锁 -> 成败判定。
@@ -141,7 +143,7 @@
   - 第 `10` 关使用十字 `holes`，形成四象限式分区。
 
 #### `src/config/tileKinds.js`
-- 定义所有 tile 类型与资源路径。
+- 定义所有 tile 类型与资源路径 `assetPath`。
 - 普通花、杂草、风车、蜂巢都在这里有统一数据结构。
 - 提供 `TILE_KIND_MAP`，方便通过 key 查询类型对象。
 
@@ -224,6 +226,31 @@
 - 用于动画串联。
 
 ## 规则细节 Gameplay Details
+
+## 启动加载流程 Startup Loading Flow
+
+当前版本新增了“首屏资源预加载 `First Screen Preload`”机制，目的不是等待整包 zip 内所有文件，而是只等待首屏一定会用到的关键图片资源。
+
+启动顺序：
+
+1. `index.html` 先渲染 loading overlay。
+2. `src/main.js` 的 `bootstrap()` 收集第 1 关首屏资源清单。
+3. 使用 `Image()` 逐张预加载，并更新进度条。
+4. 图片加载完成后先关闭 loading overlay，再调用 `initialize()`。
+5. `initialize()` 内部首次 `resetBoard()` 会正常播放首屏棋盘入场动画。
+6. 用户可以看到原本的棋盘生成过程，而不是在 loading 层后面播完。
+
+当前首屏资源清单来源：
+
+- 固定资源：`assets/HandPointer.png`
+- 第 1 关 `goals`
+- 第 1 关 `initialBoard` 里实际出现的 tile 种类
+
+这样做的好处：
+
+- zip 包拆资源后，避免首屏看到缺图或半加载状态。
+- 不需要等待后续关卡资源，首开速度更可控。
+- 进度条基于显式资源清单，用户感知比浏览器默认空白等待更好。
 
 ### 点击规则 Click Rule
 

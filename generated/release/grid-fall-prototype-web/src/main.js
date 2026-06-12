@@ -50,6 +50,7 @@ const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
 const HIVE_TYPE = "hive";
 const HIVE_KIND = { key: "hive", label: "Hive", name: "蜂巢" };
 const HIVE_BEE_COUNT = 5;
+const FIRST_SCREEN_STATIC_ASSET_PATHS = ["./assets/HandPointer.png"];
 
 export function initialize(doc = globalThis.document) {
   if (!doc) {
@@ -92,10 +93,11 @@ export function initialize(doc = globalThis.document) {
   window.addEventListener("orientationchange", onViewportResize);
 
   startFpsCounter();
-  void resetBoard();
+  const ready = resetBoard();
 
   return {
     resetBoard,
+    ready,
   };
 
   function startFpsCounter() {
@@ -1171,6 +1173,178 @@ export function initialize(doc = globalThis.document) {
   }
 }
 
+function createLoadingView(doc = globalThis.document) {
+  const overlayElement = doc?.querySelector("#loadingOverlay");
+  const messageElement = doc?.querySelector("#loadingMessage");
+  const progressFillElement = doc?.querySelector("#loadingProgressFill");
+  const progressTextElement = doc?.querySelector("#loadingProgressText");
+
+  function setMessage(message) {
+    if (messageElement) {
+      messageElement.textContent = message;
+    }
+  }
+
+  function setProgress(completed, total) {
+    const ratio = total > 0 ? Math.min(1, completed / total) : 1;
+    const percent = Math.round(ratio * 100);
+
+    if (progressFillElement) {
+      progressFillElement.style.width = `${percent}%`;
+    }
+
+    if (progressTextElement) {
+      progressTextElement.textContent = total > 0
+        ? `${percent}% (${completed}/${total})`
+        : `${percent}%`;
+    }
+  }
+
+  function hide({ immediate = false } = {}) {
+    if (!overlayElement) {
+      return;
+    }
+
+    if (immediate) {
+      overlayElement.hidden = true;
+      overlayElement.classList.add("is-hidden");
+      return;
+    }
+
+    overlayElement.classList.add("is-hidden");
+  }
+
+  return {
+    setMessage,
+    setProgress,
+    hide,
+  };
+}
+
+function normalizeTileKindKey(kind) {
+  return typeof kind === "number" ? (NUM_TO_TILE_KEY[kind] ?? null) : kind;
+}
+
+function collectFirstScreenAssetPaths() {
+  const firstLevel = LEVELS[0];
+  const assetPaths = new Set(FIRST_SCREEN_STATIC_ASSET_PATHS);
+  const tileKeys = new Set();
+
+  if (!firstLevel) {
+    return [...assetPaths];
+  }
+
+  for (const goal of firstLevel.goals ?? []) {
+    const key = normalizeTileKindKey(goal.kind);
+    if (key) {
+      tileKeys.add(key);
+    }
+  }
+
+  if (firstLevel.initialBoard) {
+    for (const row of firstLevel.initialBoard) {
+      for (const cell of row) {
+        const key = normalizeTileKindKey(cell);
+        if (key) {
+          tileKeys.add(key);
+        }
+      }
+    }
+  } else {
+    for (const kind of firstLevel.tileKinds ?? []) {
+      const key = normalizeTileKindKey(kind);
+      if (key) {
+        tileKeys.add(key);
+      }
+    }
+  }
+
+  for (const key of tileKeys) {
+    const assetPath = TILE_KIND_MAP[key]?.assetPath;
+    if (assetPath) {
+      assetPaths.add(assetPath);
+    }
+  }
+
+  return [...assetPaths];
+}
+
+function preloadImage(src) {
+  return new Promise((resolve) => {
+    const image = new Image();
+
+    const finish = (status) => {
+      resolve({ src, status });
+    };
+
+    image.addEventListener("load", async () => {
+      try {
+        if (typeof image.decode === "function") {
+          await image.decode();
+        }
+      } catch {
+        // decode 失败时浏览器通常已经拿到资源，不阻塞进入游戏。
+      }
+
+      finish("loaded");
+    }, { once: true });
+
+    image.addEventListener("error", () => {
+      finish("error");
+    }, { once: true });
+
+    image.src = src;
+  });
+}
+
+async function preloadFirstScreenAssets(onProgress) {
+  const assetPaths = collectFirstScreenAssetPaths();
+  const total = assetPaths.length;
+  let completed = 0;
+
+  onProgress?.(completed, total);
+
+  const results = await Promise.all(assetPaths.map(async (assetPath) => {
+    const result = await preloadImage(assetPath);
+    completed += 1;
+    onProgress?.(completed, total);
+    return result;
+  }));
+
+  return {
+    assetPaths,
+    results,
+  };
+}
+
+async function bootstrap(doc = globalThis.document) {
+  if (!doc) {
+    return null;
+  }
+
+  const loadingView = createLoadingView(doc);
+  loadingView.setMessage("正在加载首屏需要显示的图片资源...");
+
+  const { results } = await preloadFirstScreenAssets((completed, total) => {
+    loadingView.setProgress(completed, total);
+    if (total > 0 && completed < total) {
+      loadingView.setMessage(`正在加载首屏资源 ${completed} / ${total}`);
+    }
+  });
+
+  const failedResults = results.filter((result) => result.status !== "loaded");
+  if (failedResults.length > 0) {
+    console.warn("Some first-screen assets failed to preload.", failedResults);
+  }
+
+  loadingView.setProgress(1, 1);
+  loadingView.setMessage("资源已就绪，正在进入游戏...");
+  loadingView.hide({ immediate: true });
+
+  const app = initialize(doc);
+  return app;
+}
+
 if (typeof document !== "undefined") {
-  initialize(document);
+  void bootstrap(document);
 }

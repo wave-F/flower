@@ -27,6 +27,92 @@ body {
     linear-gradient(180deg, #fff8f1 0%, #ffeede 52%, #ffdcbc 100%);
 }
 
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding:
+    calc(env(safe-area-inset-top) + 24px)
+    calc(env(safe-area-inset-right) + 24px)
+    calc(env(safe-area-inset-bottom) + 24px)
+    calc(env(safe-area-inset-left) + 24px);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.28), transparent 32%),
+    linear-gradient(180deg, rgba(255, 248, 241, 0.96), rgba(255, 232, 212, 0.98));
+  backdrop-filter: blur(12px);
+  transition: opacity 220ms ease, visibility 220ms ease;
+}
+
+.loading-overlay.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.loading-card {
+  width: min(100%, 340px);
+  padding: 28px 24px 24px;
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 246, 237, 0.96));
+  box-shadow:
+    0 20px 60px rgba(166, 101, 55, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(226, 173, 126, 0.28);
+}
+
+.loading-eyebrow {
+  margin: 0 0 10px;
+  color: #db7d45;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.loading-title {
+  margin: 0;
+  color: #824117;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.loading-message {
+  margin: 12px 0 18px;
+  color: #8e654e;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.loading-progress {
+  overflow: hidden;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(226, 188, 151, 0.32);
+  box-shadow: inset 0 1px 2px rgba(122, 74, 40, 0.08);
+}
+
+.loading-progress-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff9a62 0%, #ffca63 52%, #8ad36b 100%);
+  box-shadow: 0 0 16px rgba(255, 181, 99, 0.4);
+  transition: width 160ms ease;
+}
+
+.loading-progress-text {
+  margin: 12px 0 0;
+  color: #7c4a25;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: right;
+}
+
 .app {
   /* 框宽度：跟随屏幕，上限 430px(贴合 iPhone Pro Max) */
   --frame-w: min(calc(100vw - 12px), 430px);
