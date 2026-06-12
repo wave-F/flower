@@ -523,6 +523,10 @@ body {
     inset 0 0 0 1px rgba(226, 170, 126, 0.34),
     0 22px 44px rgba(189, 126, 82, 0.18);
   overflow: visible;
+  /* 棋盘形状由 JS 注入的 SVG mask 决定：
+     内部洞口会扣除，外边缺块会直接重塑整体外轮廓。 */
+  -webkit-mask: var(--board-hole-mask, none);
+  mask: var(--board-hole-mask, none);
 }
 
 .board::before {
@@ -532,31 +536,29 @@ body {
   z-index: 1;
   border-radius: inherit;
   pointer-events: none;
-  background:
-    repeating-linear-gradient(
-      to right,
-      transparent 0,
-      transparent var(--tile-size),
-      var(--grid-line) var(--tile-size),
-      var(--grid-line) calc(var(--tile-size) + 1px),
-      transparent calc(var(--tile-size) + 1px),
-      transparent calc(var(--tile-size) + var(--gap))
-    ),
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent var(--tile-size),
-      var(--grid-line) var(--tile-size),
-      var(--grid-line) calc(var(--tile-size) + 1px),
-      transparent calc(var(--tile-size) + 1px),
-      transparent calc(var(--tile-size) + var(--gap))
-    );
+  /* 网格线由 JS 生成 SVG，只保留可用格之间的真实分隔线。 */
+  -webkit-mask: var(--board-hole-mask, none);
+  mask: var(--board-hole-mask, none);
+  background-image: var(--board-grid-overlay, none);
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 100% 100%;
 }
 
 .slot {
   position: absolute;
   width: var(--tile-size);
   height: var(--tile-size);
+}
+
+.board-shape-outline {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 100% 100%;
 }
 
 .tile-layer {

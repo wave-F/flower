@@ -55,7 +55,9 @@ export async function animateResolution({
           flights,
           tileView,
           windmillTimings,
+          flyDuration,
           isGoalKind,
+          getGoalRect,
           onGoalArrive,
         })
         : animateHiveEffect({
@@ -137,7 +139,9 @@ async function animateWindmillEffect({
   flights,
   tileView,
   windmillTimings,
+  flyDuration,
   isGoalKind,
+  getGoalRect,
   onGoalArrive,
 }) {
   tileView.popTile(effect.originTileId, {
@@ -166,27 +170,29 @@ async function animateWindmillEffect({
     }
 
     animatedTileIds.add(tile.id);
-    const direction = getWindmillBurstDirection(tile, effect);
-    const runBurst = (resolve) => {
-      tileView.burstTile(tile.id, {
-        duration: windmillTimings.flowerFlyDuration,
-        directionX: direction.x,
-        directionY: direction.y,
-        onArrive: resolve,
-      });
-    };
 
+    // 目标花：飞向 HUD 目标槽位（与蜂巢一致），而不是被吹散到屏幕外。
     if (isGoalKind?.(tile.kind.key)) {
       flights.push(new Promise((resolve) => {
-        runBurst(() => {
-          onGoalArrive?.(tile);
-          resolve();
+        tileView.flyTile(tile.id, {
+          duration: flyDuration,
+          targetRect: getGoalRect?.(tile.kind.key) ?? null,
+          onArrive: () => {
+            onGoalArrive?.(tile);
+            resolve();
+          },
         });
       }));
       continue;
     }
 
-    runBurst();
+    // 普通花：沿风车朝向吹散。
+    const direction = getWindmillBurstDirection(tile, effect);
+    tileView.burstTile(tile.id, {
+      duration: windmillTimings.flowerFlyDuration,
+      directionX: direction.x,
+      directionY: direction.y,
+    });
   }
 
   await Promise.all([

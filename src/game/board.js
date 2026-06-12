@@ -21,7 +21,7 @@ export function randomKind(tileKinds) {
   return tileKinds[Math.floor(Math.random() * tileKinds.length)];
 }
 
-export function createBoard({ state, columns, rows, tileKinds, maxAttempts }) {
+export function createBoard({ state, columns, rows, tileKinds, maxAttempts, isHole = () => false }) {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const nextBoard = [];
 
@@ -29,7 +29,7 @@ export function createBoard({ state, columns, rows, tileKinds, maxAttempts }) {
       const row = [];
 
       for (let x = 0; x < columns; x += 1) {
-        row.push(createTile(state, x, y, randomKind(tileKinds)));
+        row.push(isHole(x, y) ? null : createTile(state, x, y, randomKind(tileKinds)));
       }
 
       nextBoard.push(row);
@@ -40,10 +40,10 @@ export function createBoard({ state, columns, rows, tileKinds, maxAttempts }) {
     }
   }
 
-  return createFallbackBoard({ state, columns, rows, tileKinds });
+  return createFallbackBoard({ state, columns, rows, tileKinds, isHole });
 }
 
-export function createFixedBoard({ state, layout, tileKindMap }) {
+export function createFixedBoard({ state, layout, tileKindMap, isHole = () => false }) {
   const nextBoard = [];
   // 定义数字到 Key 的映射
   const numToKey = {
@@ -60,6 +60,12 @@ export function createFixedBoard({ state, layout, tileKindMap }) {
   for (let y = 0; y < layout.length; y += 1) {
     const row = [];
     for (let x = 0; x < layout[y].length; x += 1) {
+      if (isHole(x, y)) {
+        // 镂空格不生成棋子，保持 null
+        row.push(null);
+        continue;
+      }
+
       let kindKey = layout[y][x];
       // 如果是数字，转换成字符串 Key
       if (typeof kindKey === "number") {
@@ -75,13 +81,18 @@ export function createFixedBoard({ state, layout, tileKindMap }) {
   return nextBoard;
 }
 
-function createFallbackBoard({ state, columns, rows, tileKinds }) {
+function createFallbackBoard({ state, columns, rows, tileKinds, isHole = () => false }) {
   const nextBoard = [];
 
   for (let y = 0; y < rows; y += 1) {
     const row = [];
 
     for (let x = 0; x < columns; x += 1) {
+      if (isHole(x, y)) {
+        row.push(null);
+        continue;
+      }
+
       const kind = tileKinds[(x + y * 2) % tileKinds.length];
       row.push(createTile(state, x, y, kind));
     }
@@ -101,6 +112,7 @@ export function applyRemovalsAndCollapse({
   state,
   tileKinds,
   specialCreationContext = null,
+  isHole = () => false,
 }) {
   const removedTiles = [];
   const removedTileGroups = [];
@@ -143,7 +155,7 @@ export function applyRemovalsAndCollapse({
     }
   }
 
-  const collapseResult = collapseBoard({ board, columns, rows, state, tileKinds });
+  const collapseResult = collapseBoard({ board, columns, rows, state, tileKinds, isHole });
 
   return {
     removedTiles,
@@ -213,19 +225,33 @@ function getFourMatchWindmillType(group) {
   return Math.random() < 0.5 ? WINDMILL_ROW_TYPE : WINDMILL_COLUMN_TYPE;
 }
 
-function collapseBoard({ board, columns, rows, state, tileKinds }) {
+function collapseBoard({ board, columns, rows, state, tileKinds, isHole = () => false }) {
   const dropped = [];
   const spawned = [];
 
   for (let x = 0; x < columns; x += 1) {
-    let writeRow = rows - 1;
+    // 只在“可用行”之间做重力压缩；镂空格保持 null，棋子可穿过它下落补位。
+    const playableRows = [];
+    for (let y = rows - 1; y >= 0; y -= 1) {
+      if (!isHole(x, y)) {
+        playableRows.push(y);
+      }
+    }
 
+    let writeIndex = 0;
+
+    // 自下而上：把现有棋子依次压到最底部的可用行
     for (let readRow = rows - 1; readRow >= 0; readRow -= 1) {
+      if (isHole(x, readRow)) {
+        continue;
+      }
+
       const tile = board[readRow][x];
       if (!tile) {
         continue;
       }
 
+      const writeRow = playableRows[writeIndex];
       if (readRow !== writeRow) {
         board[writeRow][x] = tile;
         board[readRow][x] = null;
@@ -233,14 +259,17 @@ function collapseBoard({ board, columns, rows, state, tileKinds }) {
         tile.y = writeRow;
       }
 
-      writeRow -= 1;
+      writeIndex += 1;
     }
 
-    for (let row = writeRow; row >= 0; row -= 1) {
-      const spawnIndex = writeRow - row;
+    // 顶部剩余的可用行生成新棋子，从棋盘上方穿入
+    let spawnIndex = 0;
+    for (let index = writeIndex; index < playableRows.length; index += 1) {
+      const row = playableRows[index];
       const tile = createTile(state, x, row, randomKind(tileKinds));
       board[row][x] = tile;
       spawned.push({ tile, fromRow: -1 - spawnIndex, toRow: row });
+      spawnIndex += 1;
     }
   }
 

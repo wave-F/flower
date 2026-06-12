@@ -8,5 +8,6 @@ export function createGameState(initialLevelIndex = 0) {
     currentLevelIndex: initialLevelIndex,
     goalProgress: {},
     movesUsed: 0,
+    holes: new Set(),
   };
 }

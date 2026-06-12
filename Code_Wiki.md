@@ -131,6 +131,7 @@
 - 每关的步数限制 `moveLimit`
 - 每关的颜色池 `tileKinds` (使用数字 ID)
 - 每关的固定开局布局 `initialBoard` (可选，使用数字 ID)
+- 每关的镂空/不可用格 `holes` (可选)：数组形式 `[[x, y], ...]`，0-based 坐标。镂空格不渲染底板、不生成棋子、不可点击；属于“穿透式镂空”，上方棋子掉落时会穿过镂空格补到下方可用格（第 1 关已用四角 `[0,0]/[4,0]/[0,4]/[4,4]` 做试点）
 - 每关的目标花朵种类与数量 `goals` (使用数字 ID)
 - 当前关卡尺寸递进：`5x5` -> `6x6` -> `7x7` -> `8x8` -> `8x9` -> `8x10`；宽度上限为 `8`，高度上限为 `10`
 - 后续关卡主要通过增加目标种类、提高目标数量、适当增加步数来提高难度
@@ -145,6 +146,7 @@
 #### `src/state/gameState.js`
 - 创建统一运行时状态对象
 - 包含棋盘、tile 自增 id、步数、关卡进度、关卡状态等
+- `holes`：当前关卡镂空格集合（`Set<"x,y">`），在 `prepareLevelState(...)` 时由关卡 `holes` 配置生成
 
 ### `src/game/`
 
@@ -156,6 +158,8 @@
 - 精确 4 个普通同色连通块消除时，4 个原 tile 全部正常移除并飞走，同时创建 1 个新的风车道具；横向形状生成纵向风车 `special.type = "windmillColumn"`，纵向形状生成横向风车 `special.type = "windmillRow"`，宽高相同则随机
 - 5 个及以上普通同色连通块消除时，原 tile 全部正常移除并飞走，同时创建 1 个新的蜂巢道具 `special.type = "hive"`
 - 提供按 id 查找 tile 的能力
+- 支持镂空/不可用格：`createBoard` / `createFixedBoard` / `applyRemovalsAndCollapse` 都接收可选 `isHole(x, y)`；镂空格不生成棋子（保持 `null`）
+- 穿透式下落：`collapseBoard(...)` 不再整列从底到顶压缩，而是先收集该列“可用行”（非镂空行），只在可用行之间做重力压缩与顶部补位；镂空格始终保持 `null`，上方棋子可穿过它落到下方可用格。注意：棋盘内部 `null` 同时表示“消除后的临时空位”和“镂空格”，区分依据是 `isHole(x, y)`
 - 特殊道具触发时会先收集完整链式影响范围，并记录每个子道具的 `triggeredByTileId`：逻辑层一次性移除所有受影响 tile、一次性下落，避免中途下落改变后续道具坐标；动画层按父子关系延迟播放，只有风车吹风阶段扫到或蜜蜂飞到目标后才启动子道具
 - 链式收集里拆分三套去重：`tilesById` 只负责最终移除去重；`claimedTargetIds` 只负责普通/目标 tile 不被多个蜂巢重复采集；`queuedSpecialIds` / `triggeredSpecialIds` 负责特殊道具只触发一次，避免用最终移除集合误过滤蜂巢目标导致少触发
 
@@ -170,10 +174,11 @@
 这是“匹配规则”的核心模块。
 
 #### `src/game/levelProgress.js`
-- 重置关卡进度
+- 重置关卡进度（同时把关卡 `holes` 配置写入 `state.holes`）
 - 记录被移除的目标花朵数量
 - 判断关卡是否完成
 - 计算剩余步数
+- `isHoleCell(state, x, y)`：判断某坐标是否为镂空/不可用格
 
 ### `src/ui/`
 
@@ -184,8 +189,12 @@
 #### `src/ui/boardLayout.js`
 - 根据视口大小计算棋盘布局
 - 设置 CSS 变量 `--tile-size` / `--gap`
-- 管理棋盘槽位生成；`.slot` 只做不可见占位，棋盘底部的连续横纵网格线由 `.board::before` 绘制，用来轻微标出格子
-- `renderBoardSlots(...)` 使用 `DocumentFragment` 批量插入槽位，减少 resize 时的 DOM 写入次数
+- 管理棋盘槽位生成；`.slot` 只做不可见占位，棋盘底色由 `.board` 整体绘制、横纵网格线由 `.board::before` 绘制，用来轻微标出格子
+- `renderBoardSlots(...)` 使用 `DocumentFragment` 批量插入槽位，减少 resize 时的 DOM 写入次数；末尾调用 `applyBoardShapeMask(...)`
+- `applyBoardShapeMask({ boardElement, columns, rows, isHole })`：棋盘形状融合实现，整套边界追踪 + 圆角逻辑**参考 `JellyRelocate/src/engine/Board.tsx`**。不是在大矩形棋盘上继续“挖洞”，而是把**可用格当作真正的棋盘实体区域**来提取整体轮廓：以可用格边界 loop（`extractRegionBoundaryLoops`）生成不规则棋盘外形，相连可用格会自然融合，边缘缺块也会直接重塑外轮廓。`buildRoundedLoops` 会按拐角方向区分外凸角 / 内凹角，并在像素空间生成圆角边；`roundedLoopToPath` 再转成 SVG path。最终 path 作为 `--board-hole-mask` 作用于 `.board` 与 `.board::before`
+  - 内部规则分隔线不再用整盘 `repeating-linear-gradient`，而是由 `applyBoardGridOverlay(...)` 按**相邻两个可用格**生成 SVG 线段，所以洞边不会残留贴得很近的规则网格线
+  - 异形外轮廓 / 洞口轮廓由独立 overlay `.board-shape-outline` 承载同一条 path 的描边，保证“该有边界的地方一定有，且只画一条”
+  - 相关辅助（移植自 JellyRelocate）：`extractRegionBoundaryLoops` 用绕格有向边 + `chooseNextEdge` 追踪有序闭合轮廓；`simplifyLoop` 去共线点只留拐角；`getDirection`/`getLeftNormal`/`getSignedArea` 判断行进方向、法线与朝向；`buildRoundedLoops` 区分外凸/内凹角并扩展；`roundedLoopToPath` 用圆弧切角
 
 #### `src/ui/tileView.js`
 - 管理 tile DOM 元素的创建、复用、销毁

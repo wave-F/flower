@@ -3,6 +3,11 @@ export function prepareLevelState(state, level) {
   state.isLevelFailed = false;
   state.goalProgress = Object.fromEntries(level.goals.map((goal) => [goal.kind, 0]));
   state.movesUsed = 0;
+  state.holes = new Set((level.holes ?? []).map(([x, y]) => `${x},${y}`));
+}
+
+export function isHoleCell(state, x, y) {
+  return state.holes?.has(`${x},${y}`) ?? false;
 }
 
 export function recordRemovedTiles(state, removedTiles) {

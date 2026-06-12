@@ -11,7 +11,7 @@ import {
 import { LEVELS } from "./config/levels.js";
 import { TILE_KIND_MAP } from "./config/tileKinds.js";
 import { applyRemovalsAndCollapse, createBoard, createFixedBoard, findTileById } from "./game/board.js";
-import { isCurrentLevelComplete, getRemainingMoves, prepareLevelState } from "./game/levelProgress.js";
+import { isCurrentLevelComplete, getRemainingMoves, isHoleCell, prepareLevelState } from "./game/levelProgress.js";
 import { findMatchGroups } from "./game/match.js";
 import { createGameState } from "./state/gameState.js";
 import { columnLabel } from "./utils/grid.js";
@@ -78,7 +78,7 @@ export function initialize(doc = globalThis.document) {
     columns: initialCols,
     rows: initialRows,
   });
-  renderBoardSlots({ boardElement: elements.boardElement, columns: initialCols, rows: initialRows });
+  renderBoardSlots({ boardElement: elements.boardElement, columns: initialCols, rows: initialRows, isHole });
 
   elements.boardShellElement.addEventListener("click", onBoardClick);
   elements.nextLevelButtonElement.addEventListener("click", onNextLevelButtonClick);
@@ -125,6 +125,10 @@ export function initialize(doc = globalThis.document) {
     };
   }
 
+  function isHole(x, y) {
+    return isHoleCell(state, x, y);
+  }
+
   function getCurrentLevelSettings() {
     const level = getCurrentLevel();
     return {
@@ -145,7 +149,7 @@ export function initialize(doc = globalThis.document) {
       columns,
       rows,
     });
-    renderBoardSlots({ boardElement: elements.boardElement, columns, rows });
+    renderBoardSlots({ boardElement: elements.boardElement, columns, rows, isHole });
     tileView.refreshTilePositions(state.board, rows, columns);
     positionTutorialGuide();
   }
@@ -168,7 +172,7 @@ export function initialize(doc = globalThis.document) {
       columns,
       rows,
     });
-    renderBoardSlots({ boardElement: elements.boardElement, columns, rows });
+    renderBoardSlots({ boardElement: elements.boardElement, columns, rows, isHole });
 
     renderHud();
     state.isProcessing = true;
@@ -182,6 +186,7 @@ export function initialize(doc = globalThis.document) {
         state,
         layout: level.initialBoard,
         tileKindMap: TILE_KIND_MAP,
+        isHole,
       });
     } else {
       state.board = createBoard({
@@ -190,6 +195,7 @@ export function initialize(doc = globalThis.document) {
         rows,
         tileKinds,
         maxAttempts: MAX_BOARD_GENERATION_ATTEMPTS,
+        isHole,
       });
     }
 
@@ -198,6 +204,11 @@ export function initialize(doc = globalThis.document) {
     for (let x = 0; x < columns; x += 1) {
       for (let y = 0; y < rows; y += 1) {
         const tile = state.board[y][x];
+        if (!tile) {
+          // 镂空格无棋子，跳过挂载
+          continue;
+        }
+
         tileView.mountTileForEntry(tile, entryMetrics);
       }
     }
@@ -371,6 +382,7 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
+      isHole,
     });
     const initialResolution = await animateResolution({
       result: initialResult,
@@ -445,6 +457,7 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
+      isHole,
     });
     result.windmillEffects = specialChain.windmillEffects;
     result.hiveEffects = specialChain.hiveEffects;
@@ -507,6 +520,7 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
+      isHole,
     });
     result.windmillEffects = specialChain.windmillEffects;
     result.hiveEffects = specialChain.hiveEffects;
@@ -575,6 +589,7 @@ export function initialize(doc = globalThis.document) {
         rows,
         state,
         tileKinds,
+        isHole,
         specialCreationContext: createSpecialCreationContext(previousResult, clickedCell),
       });
       previousResult = result;

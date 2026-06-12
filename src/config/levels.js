@@ -15,8 +15,17 @@ export const LEVELS = [
     id: 1,
     columns: 5,
     rows: 5,
-    moveLimit: 10,
+    moveLimit: 5,
     tileKinds: [5, 3, 2, 1, 4, 0], // 5:蓝色, 3:黄色, 2:粉色, 1:橙色, 4:红色, 0:杂草
+    // 镂空/不可用格 (0-based [x, y])：第 2 列整列相连镂空，验证「相连镂空合并成整体、
+    // 只画外轮廓描边、内部无分隔线」。掉落时上方棋子会穿过镂空格补位
+    holes: [
+      [0, 1],
+      [1, 1],
+      [2, 1],
+      [3, 1],
+      [4, 1],
+    ],
     initialBoard: [
       [5, 0, 3, 2, 1],
       [5, 2, 3, 1, 2],
@@ -33,7 +42,7 @@ export const LEVELS = [
     id: 2,
     columns: 6,
     rows: 6,
-    moveLimit: 14,
+    moveLimit: 10,
     tileKinds: [1, 2, 3, 4, 5, 6, 0],
     goals: [
       { kind: 6, count: 8 },
@@ -44,8 +53,8 @@ export const LEVELS = [
     id: 3,
     columns: 7,
     rows: 7,
-    moveLimit: 18,
-    tileKinds: [1, 2, 3, 4, 5, 6, 7, 0],
+    moveLimit: 14,
+    tileKinds: [1, 2, 3, 4, 5, 6, 0],
     goals: [
       { kind: 1, count: 10 },
       { kind: 4, count: 10 },
@@ -55,8 +64,8 @@ export const LEVELS = [
     id: 4,
     columns: 8,
     rows: 8,
-    moveLimit: 22,
-    tileKinds: [1, 2, 3, 4, 5, 6, 7, 0],
+    moveLimit: 18,
+    tileKinds: [1, 2, 3, 4, 5, 6, 0],
     goals: [
       { kind: 6, count: 14 },
       { kind: 4, count: 14 },
@@ -66,7 +75,7 @@ export const LEVELS = [
     id: 5,
     columns: 8,
     rows: 9,
-    moveLimit: 24,
+    moveLimit: 22,
     tileKinds: [1, 2, 3, 4, 5, 6, 7, 0],
     goals: [
       { kind: 5, count: 12 },
