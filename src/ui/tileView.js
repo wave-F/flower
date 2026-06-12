@@ -96,6 +96,16 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     decorateTileElement(element, tile);
   }
 
+  function setWindmillFusionState(tileId, { hideArrow = false, spin = false } = {}) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      return;
+    }
+
+    element.classList.toggle("tile--fusion-hiding-arrow", hideArrow);
+    element.classList.toggle("tile--fusion-spinning", spin);
+  }
+
   function flyTile(tileId, { duration, targetRect = null, onArrive } = {}) {
     const element = tileElements.get(tileId);
     if (!element) {
@@ -184,7 +194,113 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     });
   }
 
-  function popTile(tileId, { duration, spinUpDuration = duration * 0.36, burstDuration = duration * 0.4, onArrive } = {}) {
+  function mergeTileIntoTile(
+    fromTileId,
+    toTileId,
+    {
+      retreatDuration = 140,
+      slamDuration = 220,
+      retreatDistance = 18,
+      onArrive,
+    } = {},
+  ) {
+    const element = tileElements.get(fromTileId);
+    const targetElement = tileElements.get(toTileId);
+    if (!element || !targetElement) {
+      onArrive?.();
+      return;
+    }
+
+    tileElements.delete(fromTileId);
+    const startRect = liftTileToFlyLayer(element);
+    const targetRect = targetElement.getBoundingClientRect();
+    const startCenterX = startRect.left + startRect.width / 2;
+    const startCenterY = startRect.top + startRect.height / 2;
+    const targetCenterX = targetRect.left + targetRect.width / 2;
+    const targetCenterY = targetRect.top + targetRect.height / 2;
+    const directionX = targetCenterX - startCenterX;
+    const directionY = targetCenterY - startCenterY;
+    const normalized = normalizeDirection(directionX, directionY);
+    const retreatX = -normalized.x * retreatDistance;
+    const retreatY = -normalized.y * retreatDistance;
+    const impactX = targetCenterX - startCenterX;
+    const impactY = targetCenterY - startCenterY;
+
+    const retreatAnimation = element.animate([
+      { opacity: 1, transform: "translate(0, 0) scale(1)" },
+      { opacity: 1, transform: `translate(${retreatX}px, ${retreatY}px) scale(0.94)` },
+    ], {
+      duration: retreatDuration,
+      easing: "cubic-bezier(0.24, 0.84, 0.22, 1)",
+      fill: "forwards",
+    });
+
+    retreatAnimation.finished.then(() => {
+      retreatAnimation.cancel();
+      element.style.transform = `translate(${retreatX}px, ${retreatY}px) scale(0.94)`;
+      element.style.opacity = "1";
+
+      const slamAnimation = element.animate([
+        { opacity: 1, transform: `translate(${retreatX}px, ${retreatY}px) scale(0.94)` },
+        { opacity: 1, transform: `translate(${impactX * 0.78}px, ${impactY * 0.78}px) scale(1.06)`, offset: 0.72 },
+        { opacity: 0, transform: `translate(${impactX}px, ${impactY}px) scale(0.2)` },
+      ], {
+        duration: slamDuration,
+        easing: "cubic-bezier(0.12, 0.82, 0.22, 1)",
+        fill: "forwards",
+      });
+
+      slamAnimation.finished.then(() => {
+        slamAnimation.cancel();
+        releaseTileElement(element);
+        onArrive?.();
+      }).catch(() => {
+        releaseTileElement(element);
+        onArrive?.();
+      });
+    }).catch(() => {
+      releaseTileElement(element);
+      onArrive?.();
+    });
+  }
+
+  function pulseTile(tileId, { duration = 120, scaleMultiplier = 1.34, onArrive } = {}) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      onArrive?.();
+      return;
+    }
+
+    const animation = element.animate([
+      { transform: "scale(1)", opacity: 1 },
+      { transform: `scale(${scaleMultiplier})`, opacity: 1, offset: 0.58 },
+      { transform: "scale(1)", opacity: 1 },
+    ], {
+      duration,
+      easing: "cubic-bezier(0.18, 0.92, 0.22, 1)",
+      fill: "both",
+    });
+
+    animation.finished.then(() => {
+      animation.cancel();
+      element.style.removeProperty("transform");
+      onArrive?.();
+    }).catch(() => {
+      element.style.removeProperty("transform");
+      onArrive?.();
+    });
+  }
+
+  function popTile(
+    tileId,
+    {
+      duration,
+      spinUpDuration = duration * 0.36,
+      burstDuration = duration * 0.4,
+      scaleMultiplier = 1,
+      onArrive,
+    } = {},
+  ) {
     const element = tileElements.get(tileId);
     if (!element) {
       onArrive?.();
@@ -196,12 +312,24 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.classList.add("is-popping");
     const spinUpOffset = Math.min(0.8, Math.max(0.1, spinUpDuration / duration));
     const burstEndOffset = Math.min(0.94, Math.max(spinUpOffset + 0.05, (spinUpDuration + burstDuration) / duration));
+    const boostedScale = 1.2 * scaleMultiplier;
+    const finalScale = 0.18 * Math.max(0.8, scaleMultiplier * 0.7);
+    const initialTransform = getComputedStyle(element).transform;
+    const initialOpacity = Number.parseFloat(getComputedStyle(element).opacity || "1") || 1;
+    element.classList.remove("tile--fusion-spinning", "tile--fusion-hiding-arrow");
+    if (initialTransform !== "none") {
+      element.style.transform = initialTransform;
+    }
 
     const animation = element.animate([
-      { opacity: 1, transform: "scale(1)", easing: "cubic-bezier(0.22, 0, 0.24, 1)" },
-      { opacity: 1, transform: "scale(1.2) rotate(280deg)", offset: spinUpOffset, easing: "linear" },
-      { opacity: 1, transform: "scale(1.2) rotate(700deg)", offset: burstEndOffset, easing: "cubic-bezier(0.34, 0, 0.72, 1)" },
-      { opacity: 0, transform: "scale(0.18) rotate(820deg)" },
+      {
+        opacity: initialOpacity,
+        transform: initialTransform === "none" ? "scale(1) rotate(0deg)" : initialTransform,
+        easing: "cubic-bezier(0.22, 0, 0.24, 1)",
+      },
+      { opacity: 1, transform: `scale(${boostedScale}) rotate(280deg)`, offset: spinUpOffset, easing: "linear" },
+      { opacity: 1, transform: `scale(${boostedScale}) rotate(700deg)`, offset: burstEndOffset, easing: "cubic-bezier(0.34, 0, 0.72, 1)" },
+      { opacity: 0, transform: `scale(${finalScale}) rotate(820deg)` },
     ], {
       duration,
       easing: "cubic-bezier(0.2, 0.9, 0.2, 1)",
@@ -417,6 +545,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.disabled = true;
     element.classList.add("is-flying");
     flyLayerElement.appendChild(element);
+    element.style.setProperty("--tile-size", `${startRect.width}px`);
     element.style.width = `${startRect.width}px`;
     element.style.height = `${startRect.height}px`;
     element.style.left = `${startRect.left}px`;
@@ -473,6 +602,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.style.removeProperty("opacity");
     element.style.removeProperty("transform");
     element.style.removeProperty("transition-delay");
+    element.style.removeProperty("--tile-size");
     element.removeAttribute("aria-label");
     delete element.dataset.tileId;
     delete element.dataset.specialType;
@@ -503,6 +633,10 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
 
     if (type === "windmillColumn") {
       return "纵向风车，";
+    }
+
+    if (type === "mergedWindmill") {
+      return "大风车，";
     }
 
     if (type === "hive") {
@@ -539,10 +673,13 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     getTileRect,
     growTileIntoBoard,
     getBoardMetrics: getCurrentBoardMetrics,
+    mergeTileIntoTile,
     mountSpawnedTile,
+    pulseTile,
     mountTileForEntry,
     refreshTilePositions,
     popTile,
+    setWindmillFusionState,
     setTileBoardPosition,
     shrinkTile,
     syncInteractivity,

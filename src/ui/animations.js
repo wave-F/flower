@@ -6,6 +6,29 @@ const HIVE_OPEN_DURATION = 420;
 const HIVE_BEE_DURATION = 860;
 const HIVE_BEE_STAGGER = 85;
 const HIVE_FLOWER_DELAY = 90;
+const MERGED_WINDMILL_TYPE = "mergedWindmill";
+const WINDMILL_FUSION_RETREAT_DURATION = 140;
+const WINDMILL_FUSION_SLAM_DURATION = 220;
+const WINDMILL_FUSION_RETREAT_DISTANCE = 18;
+
+export async function animateWindmillFusion({ primaryTileId, secondaryTileId, tileView, onMerged } = {}) {
+  tileView.setWindmillFusionState(primaryTileId, { hideArrow: true, spin: true });
+  tileView.setWindmillFusionState(secondaryTileId, { hideArrow: true, spin: false });
+
+  await new Promise((resolve) => {
+    tileView.mergeTileIntoTile(secondaryTileId, primaryTileId, {
+      retreatDuration: WINDMILL_FUSION_RETREAT_DURATION,
+      slamDuration: WINDMILL_FUSION_SLAM_DURATION,
+      retreatDistance: WINDMILL_FUSION_RETREAT_DISTANCE,
+      onArrive: resolve,
+    });
+  });
+
+  await Promise.resolve(onMerged?.());
+
+  // updateTile 会重置 class，这里把隐藏箭头和持续旋转重新挂回大风车上。
+  tileView.setWindmillFusionState(primaryTileId, { hideArrow: true, spin: true });
+}
 
 export async function animateResolution({
   result,
@@ -36,18 +59,21 @@ export async function animateResolution({
       ...windmillEffects.map((effect) => ({ ...effect, specialKind: "windmill" })),
       ...hiveEffects.map((effect) => ({ ...effect, specialKind: "hive" })),
     ];
+    const specialEffectOriginIds = new Set(specialEffects.map((effect) => effect.originTileId));
     const effectByOriginId = new Map(specialEffects.map((effect) => [effect.originTileId, effect]));
     const effectPromises = new Map();
     const animatedTileIds = new Set();
 
     const launchSpecialEffect = (effect, ancestorEffectIds = new Set()) => {
-      if (!effect || effectPromises.has(effect.originTileId)) {
-        // 连锁里若回指到祖先特效，只复用已启动动画，不再等待它，避免形成 Promise 环。
-        if (!effect || ancestorEffectIds.has(effect.originTileId)) {
-          return Promise.resolve();
-        }
+      if (!effect) {
+        return Promise.resolve();
+      }
 
-        return effectPromises.get(effect.originTileId) ?? Promise.resolve();
+      // 特效链是真实的图，不是严格的树。
+      // 已经启动过的 sibling / cousin 特效由“第一次启动它的分支”负责等待，
+      // 后续分支只复用启动结果，不再继续等待，避免出现 A 等 B、B 又等 A 的死锁。
+      if (ancestorEffectIds.has(effect.originTileId) || effectPromises.has(effect.originTileId)) {
+        return Promise.resolve();
       }
 
       const nextAncestorEffectIds = new Set(ancestorEffectIds);
@@ -92,6 +118,15 @@ export async function animateResolution({
         .filter((effect) => effect.triggeredByTileId == null)
         .map((effect) => launchSpecialEffect(effect)),
     );
+
+    // 双风车合成会吞掉一个已移除的特殊块，它不再作为后续特效 origin，
+    // 这里要主动清掉残留 DOM，避免后续下落时画面看起来卡住不更新。
+    result.removedTiles
+      .filter((tile) => tile.special && !specialEffectOriginIds.has(tile.id))
+      .forEach((tile) => {
+        tileView.unmountTile(tile.id);
+      });
+
     animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView);
     await wait(fallDuration);
 
@@ -154,10 +189,13 @@ async function animateWindmillEffect({
   getGoalRect,
   onGoalArrive,
 }) {
+  const consumedTileIds = effect.mergedSourceTileIds ?? new Set();
+
   tileView.popTile(effect.originTileId, {
     duration: getWindmillTotalDuration(windmillTimings),
     spinUpDuration: windmillTimings.spinUpDuration,
     burstDuration: windmillTimings.burstDuration,
+    scaleMultiplier: effect.type === MERGED_WINDMILL_TYPE ? 1.45 : 1,
   });
 
   await wait(windmillTimings.spinUpDuration);
@@ -165,6 +203,11 @@ async function animateWindmillEffect({
   const childEffectPromises = [];
   for (const targetId of effect.targetTileIds ?? []) {
     if (targetId === effect.originTileId) {
+      continue;
+    }
+
+    if (consumedTileIds.has(targetId)) {
+      animatedTileIds.add(targetId);
       continue;
     }
 
@@ -317,6 +360,22 @@ function getWindmillTotalDuration(timings) {
 }
 
 function getWindmillBurstDirection(tile, windmillEffect) {
+  if (windmillEffect.type === MERGED_WINDMILL_TYPE) {
+    const deltaX = tile.x - windmillEffect.originX;
+    const deltaY = tile.y - windmillEffect.originY;
+    if (Math.abs(deltaX) >= Math.abs(deltaY)) {
+      return {
+        x: deltaX === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(deltaX),
+        y: (Math.random() - 0.5) * 0.2,
+      };
+    }
+
+    return {
+      x: (Math.random() - 0.5) * 0.2,
+      y: deltaY === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(deltaY),
+    };
+  }
+
   if (windmillEffect.type === "windmillRow") {
     return {
       x: tile.x < windmillEffect.originX ? -1 : 1,

@@ -754,6 +754,19 @@ body {
   transform: translate(-50%, -50%) scale(var(--special-icon-scale)) rotate(90deg);
 }
 
+.tile--special-mergedWindmill::before {
+  --special-icon-size: calc(var(--tile-size) * 1.02);
+  --special-icon-scale: 1.22;
+  filter:
+    drop-shadow(0 0 calc(var(--special-glow-blur) * 1.35) rgba(255, 239, 146, 1))
+    drop-shadow(0 var(--special-shadow-y) calc(var(--special-shadow-blur) * 1.1) rgba(110, 61, 25, 0.22));
+}
+
+.tile--special-mergedWindmill::after {
+  inset: -2px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='12,22 2,32 12,42' stroke='%23ffe45c' stroke-width='7'/%3E%3Cpolyline points='12,22 2,32 12,42' stroke='%232f7df6' stroke-width='4'/%3E%3Cpolyline points='52,22 62,32 52,42' stroke='%23ffe45c' stroke-width='7'/%3E%3Cpolyline points='52,22 62,32 52,42' stroke='%232f7df6' stroke-width='4'/%3E%3Cpolyline points='22,12 32,2 42,12' stroke='%23ffe45c' stroke-width='7'/%3E%3Cpolyline points='22,12 32,2 42,12' stroke='%232f7df6' stroke-width='4'/%3E%3Cpolyline points='22,52 32,62 42,52' stroke='%23ffe45c' stroke-width='7'/%3E%3Cpolyline points='22,52 32,62 42,52' stroke='%232f7df6' stroke-width='4'/%3E%3C/g%3E%3C/svg%3E");
+}
+
 .tile--special-hive::before {
   --special-icon-size: calc(var(--tile-size) * 0.78);
   --special-icon-scale: 1.02;
@@ -776,6 +789,16 @@ body {
   animation: none;
 }
 
+.tile--fusion-hiding-arrow::after {
+  opacity: 0;
+  animation: none;
+}
+
+.tile--fusion-spinning {
+  animation: fusion-windmill-spin 360ms linear infinite;
+  transform-origin: 50% 50%;
+}
+
 @keyframes windmill-arrow-breathe {
   0%,
   100% {
@@ -785,6 +808,15 @@ body {
   50% {
     opacity: 1;
     scale: 1.03;
+  }
+}
+
+@keyframes fusion-windmill-spin {
+  from {
+    rotate: 0deg;
+  }
+  to {
+    rotate: 360deg;
   }
 }
 
