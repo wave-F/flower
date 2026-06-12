@@ -89,9 +89,8 @@ body {
   backdrop-filter: blur(2px);
 }
 
-.debug-windmill-button {
+.debug-button {
   position: absolute;
-  top: 24px;
   right: 10px;
   z-index: 100;
   appearance: none;
@@ -108,7 +107,16 @@ body {
   box-shadow: 0 3px 8px rgba(0, 50, 120, 0.18);
 }
 
-.debug-windmill-button:active {
+.debug-button--windmill {
+  top: 24px;
+}
+
+.debug-button--hive {
+  top: 54px;
+  color: #8a4f00;
+}
+
+.debug-button:active {
   transform: translateY(1px);
 }
 
@@ -634,6 +642,21 @@ body {
   transform: translate(-50%, -50%) scale(1.2) rotate(90deg);
 }
 
+.tile--special-hive::before {
+  background-image: url("./assets/item_2.png");
+  transform: translate(-50%, -50%) scale(1.08);
+  filter:
+    drop-shadow(0 0 8px rgba(255, 211, 88, 0.95))
+    drop-shadow(0 6px 9px rgba(114, 66, 24, 0.26));
+}
+
+.tile--special-hive::after {
+  inset: -9px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 232, 116, 0.36) 0 34%, rgba(255, 185, 49, 0) 70%);
+  filter: none;
+}
+
 .tile--special.is-popping::after {
   content: none;
   animation: none;
@@ -716,6 +739,18 @@ body {
   z-index: 50;
   pointer-events: none;
   overflow: visible;
+}
+
+.bee-flyer {
+  position: fixed;
+  z-index: 60;
+  display: block;
+  background: center / contain no-repeat url("./assets/bee.png");
+  filter:
+    drop-shadow(0 2px 3px rgba(87, 51, 18, 0.28))
+    drop-shadow(0 0 5px rgba(255, 226, 89, 0.6));
+  pointer-events: none;
+  will-change: transform, opacity;
 }
 
 .tutorial-guide {

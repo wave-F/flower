@@ -2,6 +2,10 @@ import { WINDMILL_TIMINGS } from "../config/windmillTimings.js";
 import { wait } from "../utils/time.js";
 
 const GROUP_FLY_STAGGER = 120;
+const HIVE_OPEN_DURATION = 420;
+const HIVE_BEE_DURATION = 860;
+const HIVE_BEE_STAGGER = 85;
+const HIVE_FLOWER_DELAY = 90;
 
 export async function animateResolution({
   result,
@@ -14,54 +18,82 @@ export async function animateResolution({
   onGoalArrive,
 }) {
   const removedTileGroups = result.removedTileGroups?.length ? result.removedTileGroups : [result.removedTiles];
-  const windmillEffect = result.windmillEffect ?? null;
+  const windmillEffects = [
+    ...(result.windmillEffects ?? []),
+    ...(result.windmillEffect ? [result.windmillEffect] : []),
+  ];
+  const hiveEffects = [
+    ...(result.hiveEffects ?? []),
+    ...(result.hiveEffect ? [result.hiveEffect] : []),
+  ];
+  const hasSpecialEffects = windmillEffects.length > 0 || hiveEffects.length > 0;
   const windmillTimings = WINDMILL_TIMINGS;
-  const triggeredSpecialIds = new Set((result.triggeredSpecialTiles ?? []).map((tile) => tile.id));
   const flights = [];
+
+  if (hasSpecialEffects) {
+    const removedTileById = new Map(result.removedTiles.map((tile) => [tile.id, tile]));
+    const specialEffects = [
+      ...windmillEffects.map((effect) => ({ ...effect, specialKind: "windmill" })),
+      ...hiveEffects.map((effect) => ({ ...effect, specialKind: "hive" })),
+    ];
+    const effectByOriginId = new Map(specialEffects.map((effect) => [effect.originTileId, effect]));
+    const effectPromises = new Map();
+    const animatedTileIds = new Set();
+
+    const launchSpecialEffect = (effect) => {
+      if (!effect || effectPromises.has(effect.originTileId)) {
+        return effectPromises.get(effect?.originTileId) ?? Promise.resolve();
+      }
+
+      const promise = effect.specialKind === "windmill"
+        ? animateWindmillEffect({
+          effect,
+          removedTileById,
+          effectByOriginId,
+          launchSpecialEffect,
+          animatedTileIds,
+          flights,
+          tileView,
+          windmillTimings,
+          isGoalKind,
+          onGoalArrive,
+        })
+        : animateHiveEffect({
+          result,
+          hiveEffect: effect,
+          effectByOriginId,
+          launchSpecialEffect,
+          animatedTileIds,
+          flights,
+          tileView,
+          flyDuration,
+          isGoalKind,
+          getGoalRect,
+          onGoalArrive,
+        });
+
+      effectPromises.set(effect.originTileId, promise);
+      return promise;
+    };
+
+    await Promise.all(
+      specialEffects
+        .filter((effect) => effect.triggeredByTileId == null)
+        .map((effect) => launchSpecialEffect(effect)),
+    );
+    animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView);
+    await wait(fallDuration);
+
+    return {
+      goalFlights: Promise.all(flights),
+    };
+  }
 
   removedTileGroups.forEach((group, groupIndex) => {
     const delay = groupIndex * GROUP_FLY_STAGGER;
 
     for (const tile of group) {
       const isGoalTile = isGoalKind?.(tile.kind.key);
-
-      if (windmillEffect && triggeredSpecialIds.has(tile.id)) {
-        setTimeout(() => {
-          tileView.popTile(tile.id, {
-            duration: getWindmillTotalDuration(windmillTimings),
-            spinUpDuration: windmillTimings.spinUpDuration,
-            burstDuration: windmillTimings.burstDuration,
-          });
-        }, delay);
-        continue;
-      }
-
-      if (windmillEffect) {
-        const direction = getWindmillBurstDirection(tile, windmillEffect);
-        const runBurst = (resolve) => {
-          tileView.burstTile(tile.id, {
-            duration: windmillTimings.flowerFlyDuration,
-            directionX: direction.x,
-            directionY: direction.y,
-            onArrive: resolve,
-          });
-        };
-
-        if (isGoalTile) {
-          flights.push(new Promise((resolve) => {
-            setTimeout(() => {
-              runBurst(() => {
-                onGoalArrive?.(tile);
-                resolve();
-              });
-            }, delay + windmillTimings.spinUpDuration);
-          }));
-          continue;
-        }
-
-        setTimeout(() => runBurst(), delay + windmillTimings.spinUpDuration);
-        continue;
-      }
 
       if (!isGoalTile) {
         setTimeout(() => {
@@ -85,10 +117,7 @@ export async function animateResolution({
     }
   });
 
-  const effectDuration = windmillEffect
-    ? getWindmillTotalDuration(windmillTimings)
-    : removeDuration;
-  await wait(effectDuration + Math.max(0, removedTileGroups.length - 1) * GROUP_FLY_STAGGER);
+  await wait(removeDuration + Math.max(0, removedTileGroups.length - 1) * GROUP_FLY_STAGGER);
 
   // 下落与花朵飞散/飞行并行，不被飞行时长阻塞
   animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView);
@@ -97,6 +126,173 @@ export async function animateResolution({
   return {
     goalFlights: Promise.all(flights),
   };
+}
+
+async function animateWindmillEffect({
+  effect,
+  removedTileById,
+  effectByOriginId,
+  launchSpecialEffect,
+  animatedTileIds,
+  flights,
+  tileView,
+  windmillTimings,
+  isGoalKind,
+  onGoalArrive,
+}) {
+  tileView.popTile(effect.originTileId, {
+    duration: getWindmillTotalDuration(windmillTimings),
+    spinUpDuration: windmillTimings.spinUpDuration,
+    burstDuration: windmillTimings.burstDuration,
+  });
+
+  await wait(windmillTimings.spinUpDuration);
+
+  const childEffectPromises = [];
+  for (const targetId of effect.targetTileIds ?? []) {
+    if (targetId === effect.originTileId) {
+      continue;
+    }
+
+    const childEffect = effectByOriginId.get(targetId);
+    if (childEffect) {
+      childEffectPromises.push(launchSpecialEffect(childEffect));
+      continue;
+    }
+
+    const tile = removedTileById.get(targetId);
+    if (!tile || animatedTileIds.has(tile.id)) {
+      continue;
+    }
+
+    animatedTileIds.add(tile.id);
+    const direction = getWindmillBurstDirection(tile, effect);
+    const runBurst = (resolve) => {
+      tileView.burstTile(tile.id, {
+        duration: windmillTimings.flowerFlyDuration,
+        directionX: direction.x,
+        directionY: direction.y,
+        onArrive: resolve,
+      });
+    };
+
+    if (isGoalKind?.(tile.kind.key)) {
+      flights.push(new Promise((resolve) => {
+        runBurst(() => {
+          onGoalArrive?.(tile);
+          resolve();
+        });
+      }));
+      continue;
+    }
+
+    runBurst();
+  }
+
+  await Promise.all([
+    wait(windmillTimings.burstDuration + windmillTimings.fadeDuration),
+    ...childEffectPromises,
+  ]);
+}
+
+async function animateHiveEffect({
+  result,
+  hiveEffect,
+  effectByOriginId,
+  launchSpecialEffect,
+  animatedTileIds,
+  flights,
+  tileView,
+  flyDuration,
+  isGoalKind,
+  getGoalRect,
+  onGoalArrive,
+}) {
+  const beeArrivals = [];
+  const childEffectPromises = [];
+  const targetTileIds = hiveEffect.targetTileIds ?? new Set();
+  const targets = result.removedTiles.filter((tile) => targetTileIds.has(tile.id));
+  const originRect = tileView.getTileRect(hiveEffect.originTileId);
+
+  targets.forEach((tile, index) => {
+    const childEffect = effectByOriginId.get(tile.id);
+    if (!childEffect && animatedTileIds.has(tile.id)) {
+      return;
+    }
+
+    const beeDelay = index * HIVE_BEE_STAGGER;
+    const isGoalTile = isGoalKind?.(tile.kind.key);
+
+    if (isGoalTile && !childEffect) {
+      animatedTileIds.add(tile.id);
+      let resolveGoalFlight;
+      const goalFlight = new Promise((resolve) => {
+        resolveGoalFlight = resolve;
+      });
+
+      const beeArrival = new Promise((resolveBeeArrival) => {
+        tileView.flyBee({
+          fromTileId: hiveEffect.originTileId,
+          fromRect: originRect,
+          toTileId: tile.id,
+          duration: HIVE_BEE_DURATION,
+          delay: beeDelay,
+          onArrive: () => {
+            setTimeout(() => {
+              tileView.flyTile(tile.id, {
+                duration: flyDuration,
+                targetRect: getGoalRect?.(tile.kind.key) ?? null,
+                onArrive: () => {
+                  onGoalArrive?.(tile);
+                  resolveGoalFlight();
+                },
+              });
+              resolveBeeArrival();
+            }, HIVE_FLOWER_DELAY);
+          },
+        });
+      });
+
+      flights.push(goalFlight);
+      beeArrivals.push(beeArrival);
+      return;
+    }
+
+    if (!childEffect) {
+      animatedTileIds.add(tile.id);
+    }
+
+    beeArrivals.push(new Promise((resolve) => {
+      tileView.flyBee({
+        fromTileId: hiveEffect.originTileId,
+        fromRect: originRect,
+        toTileId: tile.id,
+        duration: HIVE_BEE_DURATION,
+        delay: beeDelay,
+        onArrive: () => {
+          if (childEffect) {
+            childEffectPromises.push(launchSpecialEffect(childEffect));
+            resolve();
+            return;
+          }
+
+          setTimeout(() => {
+            tileView.flyTile(tile.id, { duration: flyDuration });
+            resolve();
+          }, HIVE_FLOWER_DELAY);
+        },
+      });
+    }));
+  });
+
+  await Promise.all(beeArrivals);
+  await new Promise((resolve) => {
+    tileView.shrinkTile(hiveEffect.originTileId, {
+      duration: HIVE_OPEN_DURATION,
+      onArrive: resolve,
+    });
+  });
+  await Promise.all(childEffectPromises);
 }
 
 function getWindmillTotalDuration(timings) {

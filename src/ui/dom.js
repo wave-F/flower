@@ -22,6 +22,7 @@ export function getDomElements(doc = document) {
     levelOverlayDetailElement: requireElement(doc, "#levelOverlayDetail"),
     fpsCounterElement: requireElement(doc, "#fpsCounter"),
     debugWindmillButtonElement: requireElement(doc, "#debugWindmillButton"),
+    debugHiveButtonElement: requireElement(doc, "#debugHiveButton"),
     tutorialGuideElement: requireElement(doc, "#tutorialGuide"),
     tutorialHandElement: requireElement(doc, "#tutorialHand"),
     tutorialTipElement: requireElement(doc, "#tutorialTip"),

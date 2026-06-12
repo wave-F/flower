@@ -24,7 +24,10 @@
 ```text
 /
   assets/
+    bee.png
     grass.png
+    item_1.png
+    item_2.png
     flowers/
   src/
     config/
@@ -71,7 +74,7 @@
 #### `index.html`
 - 页面入口
 - 提供 HUD、棋盘容器、关卡结算覆盖层 `#levelOverlay`（内含「下一关 / 重试」按钮 `#nextLevelButton`）
-- 提供右上角调试按钮 `#debugWindmillButton`，用于随机把一个普通花 tile 转成风车，方便测试 4 消道具效果
+- 提供右上角调试按钮 `#debugWindmillButton` / `#debugHiveButton`，用于随机把一个普通花 tile 转成风车/蜂巢，方便测试特殊道具效果；`#debugWindmillButton` 只生成风车，`#debugHiveButton` 只生成蜂巢
 - 提供新手引导层 `#tutorialGuide`，包含手指图片 `#tutorialHand` 和提示文案 `#tutorialTip`
 - 提供底部常驻提示 `#persistentHint`，在第 1 关引导完成后显示“点击拔出，下落花朵三连消除”
 - 顶层飞行浮层 `#flyLayer`：作为 `.phone-frame` 的直接子级，专门承载「飞向目标」的花朵，使其层级高于 HUD（详见「飞行层级」）
@@ -80,6 +83,7 @@
 #### `styles.css`
 - 全局页面样式
 - 棋盘、格子、花朵 tile 的视觉表现
+- 风车使用 `assets/item_1.png`，蜂巢使用 `assets/item_2.png`，蜜蜂飞行元素使用 `assets/bee.png`
 - 消除、生成等 CSS 过渡，以及飞行层样式
 - 响应式布局与移动端适配（详见下文「布局与适配」）
 
@@ -94,7 +98,8 @@
 - 初始化 DOM、状态、视图模块
 - 监听点击、resize、orientationchange
 - 驱动整局流程：点击 -> 移除 -> 掉落 -> 连锁 -> 成功/失败判定
-- 管理调试按钮：点击 `#debugWindmillButton` 时，随机挑选一个普通花 tile 转成横向或纵向风车，并刷新对应 tile 视觉；该操作不消耗步数，只用于测试
+- 管理调试按钮：点击 `#debugWindmillButton` 时固定生成风车；点击 `#debugHiveButton` 时固定生成蜂巢；两者都会随机挑选一个普通花 tile 并刷新对应 tile 视觉，不消耗步数，只用于测试
+- 管理特殊道具点击：风车清除整行/整列；蜂巢发射最多 5 只蜜蜂，优先采集尚未完成的目标花，再触发棋盘上的其他特殊道具，然后补普通花；风车和蜂巢都会链式触发被影响到的其他特殊道具，但子道具动画必须等风车吹风阶段扫到或蜜蜂实际到达后才启动，然后继续下落补位与连锁
 - 管理第 1 关新手引导：开场入场动画结束后，引导玩家点击 0-based 坐标 `(2, 2)` 的杂草；点击其他 tile 会被忽略，点击目标后隐藏引导、显示底部常驻提示并正常结算
 
 ### `src/config/`
@@ -149,7 +154,10 @@
 - 执行移除、下落、补位
 - `applyRemovalsAndCollapse(...)` 返回 `removedTiles` 和 `removedTileGroups`：前者供总数/兼容逻辑使用，后者保留消除组，供动画按组错峰起飞
 - 精确 4 个普通同色连通块消除时，4 个原 tile 全部正常移除并飞走，同时创建 1 个新的风车道具；横向形状生成纵向风车 `special.type = "windmillColumn"`，纵向形状生成横向风车 `special.type = "windmillRow"`，宽高相同则随机
+- 5 个及以上普通同色连通块消除时，原 tile 全部正常移除并飞走，同时创建 1 个新的蜂巢道具 `special.type = "hive"`
 - 提供按 id 查找 tile 的能力
+- 特殊道具触发时会先收集完整链式影响范围，并记录每个子道具的 `triggeredByTileId`：逻辑层一次性移除所有受影响 tile、一次性下落，避免中途下落改变后续道具坐标；动画层按父子关系延迟播放，只有风车吹风阶段扫到或蜜蜂飞到目标后才启动子道具
+- 链式收集里拆分三套去重：`tilesById` 只负责最终移除去重；`claimedTargetIds` 只负责普通/目标 tile 不被多个蜂巢重复采集；`queuedSpecialIds` / `triggeredSpecialIds` 负责特殊道具只触发一次，避免用最终移除集合误过滤蜂巢目标导致少触发
 
 这是“棋盘数据变化”的核心模块。
 
@@ -170,7 +178,7 @@
 ### `src/ui/`
 
 #### `src/ui/dom.js`
-- 集中获取页面上必须存在的 DOM 节点（含棋盘、tile 层、目标列表、顶层飞行浮层 `#flyLayer`、调试按钮 `#debugWindmillButton`、新手引导层 `#tutorialGuide`、底部常驻提示 `#persistentHint`）
+- 集中获取页面上必须存在的 DOM 节点（含棋盘、tile 层、目标列表、顶层飞行浮层 `#flyLayer`、调试按钮 `#debugWindmillButton` / `#debugHiveButton`、新手引导层 `#tutorialGuide`、底部常驻提示 `#persistentHint`）
 - 如果关键节点缺失，尽早报错
 
 #### `src/ui/boardLayout.js`
@@ -184,10 +192,13 @@
 - 负责 tile 的位置更新与交互状态同步
 - 负责入场、补位等与棋盘坐标的转换
 - `growTileIntoBoard(tileId, { duration, delay, column, row, onArrive })`：开场入场动画使用；tile 固定在最终棋盘格，从 `scale(0)` / 透明状态原地放大淡入，表现成从土里长出来
-- `updateTile(tile)`：在不改变 tile DOM 位置的情况下重新装饰元素；当前用于调试按钮把普通花直接转成风车
+- `updateTile(tile)`：在不改变 tile DOM 位置的情况下重新装饰元素；当前用于调试按钮把普通花直接转成风车或蜂巢
 - `flyTile(tileId, { duration, targetRect, onArrive })`：统一处理消除后的花朵飞行；目标花传入 `targetRect` 后沿三次贝塞尔曲线收束到 HUD 目标图标，非目标花不传 `targetRect`，沿同一套贝塞尔曲线飞向屏幕外并淡出
+- `flyBee({ fromTileId, fromRect, toTileId, duration, delay, onArrive })`：蜂巢触发专用，创建临时 `.bee-flyer` 元素并从蜂巢位置沿贝塞尔曲线飞到目标花；蜜蜂和飞行花朵一样使用 fixed 视口坐标，尺寸约为 tile 宽度的 72%（26px~46px clamp），飞行时不旋转，`fromRect` 用于保留蜂巢的正确起飞坐标
+- `getTileRect(tileId)`：返回某个 tile 当前视口坐标，蜂巢动画会在蜂巢本体移除前取一次起点坐标
 - `flyTileByBezier(...)`：JS 逐帧采样 cubic Bezier，按每朵花随机的控制点、旋转、缩放呼吸感和透明度更新 inline `transform` / `opacity`；用于消除飞出，不再依赖 CSS `transition` 或 `@keyframes` 描述飞行路径
 - `popTile(...)` / `burstTile(...)`：风车触发专用表现。风车道具先原地放大到约 1.2 倍并在约 0.5 秒内加速旋转，随后在行/列花朵吹散期间保持匀速旋转，吹散结束后再减速、缩小并渐隐；风车本身不走普通飞花路径
+- `shrinkTile(...)`：蜂巢触发后的本体消失表现，只缩小和淡出，不旋转
 - `liftTileToFlyLayer`：负责把元素接管到浮层并固定像素宽高/位置，避免 HUD 遮挡和棋盘裁切
 - 移入 `#flyLayer` 的目的：飞行花朵需要盖在 HUD 之上且不被 `.board-shell` 的 `overflow:hidden` 裁切（详见下文「飞行层级」）
 - `getBoardMetrics()` 暴露当前棋盘布局快照；入场、下落、补位、resize 批量定位时应复用同一份 metrics，避免每个 tile 都重复触发 `getBoundingClientRect()` / `getComputedStyle()`
@@ -197,6 +208,8 @@
 - 逻辑层算出结果后，由这里把视觉过程播出来
 - `animateBoardEntry(...)` 会把初始棋盘按距离棋盘中心由近到远错峰启动 `tileView.growTileIntoBoard()`，形成花朵先从中间、再到边缘依次从土里长出的入场效果
 - 消除时目标花和非目标花都调用 `tileView.flyTile()`：目标花传 `targetRect` 并在命中时通过 `onGoalArrive` 回调通知上层更新进度；非目标花不传 `targetRect`，只做飞散视觉，不更新进度
+- 特殊道具链式动画由 `animateResolution` 读取 `result.windmillEffects` / `result.hiveEffects`：只立即启动根道具；风车会在 `spinUpDuration` 后触发被吹到的子风车/蜂巢，蜂巢会在蜜蜂 `onArrive` 后触发被命中的子风车/蜂巢，避免整条链一开始同时播放
+- 蜂巢触发时蜂巢本体先停留在原位，逐个调用 `tileView.flyBee()`；蜜蜂到达目标花后目标花再走 `flyTile()`，到达特殊道具后启动该特殊道具动画；等所有蜜蜂到达后，蜂巢本体调用 `shrinkTile()` 缩小淡出；目标花命中 HUD 时同样通过 `onGoalArrive` 更新进度
 - `GROUP_FLY_STAGGER = 120`：一次结算中如果有多个消除组，会按组错峰启动飞行；下落补位会等到最后一组开始飞之后再执行，避免还没起飞的花被补位视觉覆盖
 - `animateResolution` 在移除和下落完成后就返回 `{ goalFlights }`，不会等待目标花飞行结束；主流程收集这些 Promise，让后续连锁可以在上一批飞行期间继续触发，最后在成功/失败判定前统一等待目标花命中，保证目标进度完整
 - 入场和下落动画会先获取一次棋盘 metrics，再传给 `tileView` 批量定位，避免同一轮动画中重复读取布局
@@ -272,12 +285,14 @@
     name: string,
   },
   special?: {
-    type: "windmillRow" | "windmillColumn",
+    type: "windmillRow" | "windmillColumn" | "hive",
   }
 }
 ```
 
-`special.type = "windmillRow" | "windmillColumn"` 表示 4 消生成的风车道具。它是新创建的 tile，不复用原 4 消中的某朵花；风车不参与普通同色正交连通检测。玩家点击风车不消耗步数，`windmillRow` 清除整行，`windmillColumn` 清除整列，然后继续执行下落补位与后续连锁。风车触发时道具本身先原地放大到约 1.2 倍并在 `spinUpDuration` 内加速旋转；对应行/列上的花随后沿风车方向被吹散，花朵飞出动画使用独立的 `flowerFlyDuration`，不再复用吹风持续时间；吹散期间风车保持匀速旋转，吹风结束后风车再减速、缩小并渐隐。下落补位只等待风车自身结束，即 `spinUpDuration + burstDuration + fadeDuration`，不等待花朵飞出动画结束。
+`special.type = "windmillRow" | "windmillColumn"` 表示 4 消生成的风车道具。它是新创建的 tile，不复用原 4 消中的某朵花；风车不参与普通同色正交连通检测。玩家点击风车不消耗步数，`windmillRow` 清除整行，`windmillColumn` 清除整列；如果清除范围内包含其他风车或蜂巢，这些特殊道具也会继续触发，完整链式影响范围收集完成后再统一下落补位。风车触发时道具本身先原地放大到约 1.2 倍并在 `spinUpDuration` 内加速旋转；到吹风阶段后，对应行/列上的花沿风车方向被吹散，被吹到的子风车/蜂巢也在此时才启动动画。花朵飞出动画使用独立的 `flowerFlyDuration`，不再复用吹风持续时间；吹散期间风车保持匀速旋转，吹风结束后风车再减速、缩小并渐隐。
+
+`special.type = "hive"` 表示 5 消及以上生成的蜂巢道具。玩家点击蜂巢不消耗步数，蜂巢先保留在棋盘上并发射最多 5 只蜜蜂；目标选择优先当前关卡尚未完成的目标花，再选棋盘上的其他特殊道具、普通花，最后才补杂草。蜜蜂飞到特殊道具时才触发该道具，不会在链式结算开始时提前播放子道具；飞到目标花时，目标花按已有 `flyTile` 逻辑飞向 HUD 目标图标或屏幕外。等所有链式触发效果完成后，棋盘下落补位并继续连锁。
 
 ### Board
 
@@ -310,6 +325,8 @@
 
 精确 4 消的特殊处理：如果某次自动连锁中的消除组由 4 个普通同色 tile 组成，棋盘会先移除全部 4 个原 tile，再创建新的风车道具。风车生成槽位优先选择上一轮刚下落/补位且参与该 4 消的 tile 位置；如果有多个候选，则选离本回合玩家点击位置最近的候选；如果没有移动候选，再回退到组内偏下且靠中的稳定位置。风车方向按 4 消形状决定：横向更多生成纵向清除，纵向更多生成横向清除，宽高相同随机。
 
+5 消及以上的特殊处理：如果某次自动连锁中的消除组数量 `>= 5`，棋盘会创建新的蜂巢道具。生成槽位复用风车的来源选择规则：优先使用上一轮刚下落/补位并参与该消除组的 tile，多个候选时选离玩家点击位置最近的候选，否则使用组内偏下且靠中的稳定位置。
+
 连锁循环最多执行 `MAX_CASCADE_COUNT` 次。达到上限后会停止继续自动结算，防止极端随机补位让单回合长时间占用交互流程。
 
 注意：目标进度不再在动画前一次性写入，而是由 `main.js` 的 `handleGoalArrive(tile)` 在每朵目标花飞行命中时逐朵累加并刷新 HUD。`recordRemovedTiles` 已不再被主流程调用（单朵记录逻辑内联在 `handleGoalArrive`）。
@@ -341,7 +358,7 @@
 - `src/game/board.js`：处理特殊块触发后的移除规则
 - `src/ui/animations.js`：补特殊表现
 
-当前已内联支持 4 消风车 `windmillRow` / `windmillColumn`，尚未建立专门的 `specialTiles.js`。后续如果特殊块变多，再单独拆模块。
+当前已内联支持 4 消风车 `windmillRow` / `windmillColumn` 与 5 消及以上蜂巢 `hive`，尚未建立专门的 `specialTiles.js`。后续如果特殊块变多，再单独拆模块。
 
 ### 新增道具 Add Boosters
 
@@ -382,6 +399,7 @@
 - `REMOVE_DURATION`
 - `FLY_DURATION`（消除后花朵飞行时长，由 `tileView.flyTile()` 的 JS 贝塞尔动画使用）
 - `GROUP_FLY_STAGGER`（同一次结算中，不同消除组飞行动画的启动间隔，目前定义在 `src/ui/animations.js`）
+- `HIVE_OPEN_DURATION` / `HIVE_BEE_DURATION` / `HIVE_BEE_STAGGER` / `HIVE_FLOWER_DELAY`（蜂巢打开、蜜蜂飞行、蜜蜂错峰、采集后花朵起飞延迟，定义在 `src/ui/animations.js`；当前蜜蜂飞行 `HIVE_BEE_DURATION = 860ms`）
 - `FALL_DURATION`
 - `ENTRY_GROW_DURATION`（开场单朵花原地长出时长）
 - `ENTRY_TILE_DELAY`（开场每朵花错峰启动间隔；配合中心到边缘排序形成扩散式长出）

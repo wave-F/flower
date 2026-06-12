@@ -1,9 +1,12 @@
 import { findMatches } from "./match.js";
 
 const FOUR_MATCH_SIZE = 4;
+const FIVE_MATCH_SIZE = 5;
 const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
+const HIVE_KIND = { key: "hive", label: "Hive", name: "蜂巢" };
 const WINDMILL_ROW_TYPE = "windmillRow";
 const WINDMILL_COLUMN_TYPE = "windmillColumn";
+const HIVE_TYPE = "hive";
 
 export function createTile(state, x, y, kind) {
   return {
@@ -107,7 +110,7 @@ export function applyRemovalsAndCollapse({
 
   for (const group of groupsToRemove) {
     const removedGroup = [];
-    const specialSourceTile = pickFourMatchSpecialTile(group, specialCreationContext);
+    const specialSourceTile = pickMatchSpecialTile(group, specialCreationContext);
 
     for (const tile of group) {
       const currentTile = board[tile.y]?.[tile.x] ?? null;
@@ -127,7 +130,12 @@ export function applyRemovalsAndCollapse({
       removedTileGroups.push(removedGroup);
     }
 
-    if (specialSourceTile && removedGroup.length === FOUR_MATCH_SIZE) {
+    if (specialSourceTile && removedGroup.length >= FIVE_MATCH_SIZE) {
+      const specialTile = createTile(state, specialSourceTile.x, specialSourceTile.y, HIVE_KIND);
+      specialTile.special = { type: HIVE_TYPE };
+      board[specialTile.y][specialTile.x] = specialTile;
+      createdSpecialTiles.push({ tile: specialTile, fromRow: specialSourceTile.y });
+    } else if (specialSourceTile && removedGroup.length === FOUR_MATCH_SIZE) {
       const specialTile = createTile(state, specialSourceTile.x, specialSourceTile.y, WINDMILL_KIND);
       specialTile.special = { type: getFourMatchWindmillType(group) };
       board[specialTile.y][specialTile.x] = specialTile;
@@ -147,8 +155,8 @@ export function applyRemovalsAndCollapse({
   };
 }
 
-function pickFourMatchSpecialTile(group, specialCreationContext) {
-  if (group.length !== FOUR_MATCH_SIZE || group.some((tile) => tile.special)) {
+function pickMatchSpecialTile(group, specialCreationContext) {
+  if (group.length < FOUR_MATCH_SIZE || group.some((tile) => tile.special)) {
     return null;
   }
 

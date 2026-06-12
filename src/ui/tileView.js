@@ -16,6 +16,10 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     return tileElements.get(tileId) ?? null;
   }
 
+  function getTileRect(tileId) {
+    return tileElements.get(tileId)?.getBoundingClientRect() ?? null;
+  }
+
   function mountTileForEntry(tile, metrics = getCurrentBoardMetrics()) {
     const element = acquireTileElement();
     decorateTileElement(element, tile);
@@ -142,6 +146,44 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     });
   }
 
+  function flyBee({ fromTileId, fromRect = null, toTileId, duration, delay = 0, onArrive } = {}) {
+    const fromElement = tileElements.get(fromTileId);
+    const toElement = tileElements.get(toTileId);
+    const beeFromRect = fromRect ?? fromElement?.getBoundingClientRect() ?? null;
+    if (!beeFromRect || !toElement) {
+      onArrive?.();
+      return;
+    }
+
+    const toRect = toElement.getBoundingClientRect();
+    const size = Math.max(26, Math.min(46, beeFromRect.width * 0.72));
+    const startRect = {
+      left: beeFromRect.left + beeFromRect.width / 2 - size / 2,
+      top: beeFromRect.top + beeFromRect.height / 2 - size / 2,
+      width: size,
+      height: size,
+    };
+    const beeElement = document.createElement("span");
+    beeElement.className = "bee-flyer";
+    beeElement.style.width = `${size}px`;
+    beeElement.style.height = `${size}px`;
+    beeElement.style.left = `${startRect.left}px`;
+    beeElement.style.top = `${startRect.top}px`;
+    flyLayerElement.appendChild(beeElement);
+
+    flyTileByBezier(beeElement, startRect, {
+      duration,
+      delay,
+      endCenterX: toRect.left + toRect.width / 2,
+      endCenterY: toRect.top + toRect.height / 2,
+      endScale: 0.92,
+      fadeOut: false,
+      rotate: false,
+      onFinish: () => beeElement.remove(),
+      onArrive,
+    });
+  }
+
   function popTile(tileId, { duration, spinUpDuration = duration * 0.36, burstDuration = duration * 0.4, onArrive } = {}) {
     const element = tileElements.get(tileId);
     if (!element) {
@@ -163,6 +205,36 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     ], {
       duration,
       easing: "cubic-bezier(0.2, 0.9, 0.2, 1)",
+      fill: "both",
+    });
+
+    animation.finished.then(() => {
+      animation.cancel();
+      releaseTileElement(element);
+      onArrive?.();
+    }).catch(() => {
+      releaseTileElement(element);
+      onArrive?.();
+    });
+  }
+
+  function shrinkTile(tileId, { duration, onArrive } = {}) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      onArrive?.();
+      return;
+    }
+
+    tileElements.delete(tileId);
+    element.disabled = true;
+    element.classList.add("is-popping");
+
+    const animation = element.animate([
+      { opacity: 1, transform: "scale(1)" },
+      { opacity: 0, transform: "scale(0.12)" },
+    ], {
+      duration,
+      easing: "cubic-bezier(0.18, 0.72, 0.22, 1)",
       fill: "both",
     });
 
@@ -227,6 +299,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     startOpacity = 1,
     fadeIn = false,
     fadeOut,
+    rotate = true,
     onFinish = () => releaseTileElement(element),
     onArrive,
   }) {
@@ -296,7 +369,8 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
           ? lerp(startOpacity, 1, progress)
           : lerp(startOpacity, 0.86, progress);
 
-      element.style.transform = `translate(${point.x - startCenterX}px, ${point.y - startCenterY}px) scale(${scale}) rotate(${rotation * progress}deg)`;
+      const rotationTransform = rotate ? ` rotate(${rotation * progress}deg)` : "";
+      element.style.transform = `translate(${point.x - startCenterX}px, ${point.y - startCenterY}px) scale(${scale})${rotationTransform}`;
       element.style.opacity = String(opacity);
 
       if (rawProgress >= 1) {
@@ -431,6 +505,10 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
       return "纵向风车，";
     }
 
+    if (type === "hive") {
+      return "蜂巢，";
+    }
+
     return "";
   }
 
@@ -455,8 +533,10 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
   return {
     clearAllTiles,
     burstTile,
+    flyBee,
     flyTile,
     getTileElement,
+    getTileRect,
     growTileIntoBoard,
     getBoardMetrics: getCurrentBoardMetrics,
     mountSpawnedTile,
@@ -464,6 +544,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     refreshTilePositions,
     popTile,
     setTileBoardPosition,
+    shrinkTile,
     syncInteractivity,
     unmountTile,
     updateTile,
