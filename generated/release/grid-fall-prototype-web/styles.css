@@ -5,6 +5,12 @@
   --board-rows: 6;
 }
 
+/* Release build: hide dev-only overlays. */
+.global-debug-actions,
+.fps-counter {
+  display: none !important;
+}
+
 * {
   box-sizing: border-box;
 }
