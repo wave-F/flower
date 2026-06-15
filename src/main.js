@@ -38,10 +38,10 @@ const FIRST_LEVEL_TUTORIAL = {
   x: 2,
   y: 2,
   kind: "grass",
-  tip: "点击花朵，收进下方槽位",
+  tip: "点击花朵直接拔掉，点击杂草收入槽位",
 };
 
-const PERSISTENT_HINT_TEXT = "点击花朵，收进下方 7 个槽位";
+const PERSISTENT_HINT_TEXT = "点击花朵直接拔掉，点击杂草收入槽位";
 
 const WINDMILL_ROW_TYPE = "windmillRow";
 const WINDMILL_COLUMN_TYPE = "windmillColumn";
@@ -334,6 +334,12 @@ export function initialize(doc = globalThis.document) {
         return;
       }
       void processWindmill(tile);
+      return;
+    }
+
+    if (tile.kind.key !== GRASS_KIND_KEY) {
+      hideTutorialGuide();
+      void processTurn(tile);
       return;
     }
 

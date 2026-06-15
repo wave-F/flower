@@ -56,7 +56,7 @@ export const LEVELS = [
     columns: 7,
     rows: 7,
     moveLimit: 20,
-    tileKinds: [1, 2, 3, 4, 5, 6],
+    tileKinds: [1, 2, 3, 4, 6,0],
     goals: [
       { kind: 6, count: 10 },
       { kind: 4, count: 10 },
@@ -67,7 +67,7 @@ export const LEVELS = [
     columns: 8,
     rows: 8,
     moveLimit: 22,
-    tileKinds: [1, 2, 3, 4, 5, 6],
+    tileKinds: [1, 2, 3, 4, 5, 0],
     goals: [
       { kind: 5, count: 10 },
       { kind: 3, count: 10 },
@@ -79,7 +79,7 @@ export const LEVELS = [
     columns: 8,
     rows: 8,
     moveLimit: 22,
-    tileKinds: [1, 2, 3, 4, 5, 6],
+    tileKinds: [1, 2, 3, 4, 5, 0],
     holes: [
       [3, 0],
       [3, 1],
@@ -93,7 +93,7 @@ export const LEVELS = [
     goals: [
       { kind: 1, count: 12 },
       { kind: 5, count: 12 },
-      { kind: 6, count: 10 },
+      { kind: 3, count: 10 },
     ],
   },
   {
@@ -101,7 +101,7 @@ export const LEVELS = [
     columns: 8,
     rows: 9,
     moveLimit: 22,
-    tileKinds: [1, 2, 3, 4, 5, 6],
+    tileKinds: [1, 2, 3, 4, 5, 0],
     holes: [
       [0, 4],
       [1, 4],
@@ -116,7 +116,7 @@ export const LEVELS = [
     goals: [
       { kind: 2, count: 14 },
       { kind: 4, count: 14 },
-      { kind: 6, count: 12 },
+      { kind: 5, count: 12 },
     ],
   },
   {
@@ -124,7 +124,7 @@ export const LEVELS = [
     columns: 8,
     rows: 10,
     moveLimit: 24,
-    tileKinds: [1, 2, 3, 4, 5, 6,7],
+    tileKinds: [1, 2, 3, 4, 5, 6,0],
     holes: [
       [3, 0],
       [3, 1],
@@ -149,7 +149,7 @@ export const LEVELS = [
     columns: 8,
     rows: 10,
     moveLimit: 24,
-    tileKinds: [1, 2, 3, 4, 5, 6, 7],
+    tileKinds: [1, 2, 3, 4, 5, 6, 0],
     holes: [
       [2, 1],
       [2, 2],
@@ -180,7 +180,7 @@ export const LEVELS = [
     columns: 8,
     rows: 10,
     moveLimit: 24,
-    tileKinds: [1, 2, 3, 4, 5, 6, 7],
+    tileKinds: [1, 2, 3, 4, 5, 6, 0],
     holes: [
       [3, 0],
       [3, 1],
@@ -204,7 +204,7 @@ export const LEVELS = [
       { kind: 1, count: 18 },
       { kind: 3, count: 18 },
       { kind: 5, count: 16 },
-      { kind: 7, count: 14 },
+      { kind: 6, count: 14 },
     ],
   },
 ];
