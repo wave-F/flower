@@ -1,6 +1,7 @@
 export function createGameState(initialLevelIndex = 0) {
   return {
     board: [],
+    trayTiles: [],
     tileIdSeed: 1,
     isProcessing: false,
     isLevelCompleted: false,

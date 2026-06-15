@@ -776,6 +776,169 @@ body {
   pointer-events: none;
 }
 
+.collection-tray-panel {
+  position: relative;
+  z-index: 1;
+  width: calc(100% - 20px);
+  max-width: calc(var(--board-pixel-width, 999px) + 36px);
+  margin: 0 auto;
+  padding: 12px 14px 14px;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 248, 239, 0.96), rgba(250, 226, 195, 0.94)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.3), rgba(247, 204, 155, 0.18));
+  box-shadow:
+    inset 0 0 0 1px rgba(226, 170, 126, 0.28),
+    0 12px 24px rgba(189, 126, 82, 0.12);
+}
+
+.collection-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.collection-tray-title,
+.collection-tray-count {
+  margin: 0;
+  color: #8a4a1a;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.collection-tray {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.collection-tray-slot {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.72), transparent 48%),
+    linear-gradient(180deg, rgba(255, 245, 231, 0.92), rgba(245, 214, 175, 0.94));
+  box-shadow:
+    inset 0 0 0 2px rgba(236, 190, 142, 0.72),
+    inset 0 -6px 10px rgba(194, 131, 74, 0.12);
+}
+
+.collection-tray-slot.is-filled {
+  box-shadow:
+    inset 0 0 0 2px rgba(214, 139, 67, 0.72),
+    inset 0 -8px 12px rgba(194, 131, 74, 0.18),
+    0 6px 12px rgba(180, 111, 56, 0.12);
+}
+
+.collection-tray-slot--draggable {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.collection-tray-slot--draggable:active {
+  cursor: grabbing;
+}
+
+.collection-tray-slot--synthesized {
+  animation: tray-slot-synthesized-glow 420ms cubic-bezier(0.18, 0.92, 0.22, 1);
+}
+
+.tray-tile {
+  --tray-image: none;
+  position: absolute;
+  inset: 8%;
+  display: block;
+  border-radius: 16px;
+}
+
+.tray-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: center / contain no-repeat var(--tray-image);
+  filter: drop-shadow(0 4px 8px rgba(120, 70, 32, 0.18));
+}
+
+.tray-drag-preview {
+  --tray-image: none;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 90;
+  border-radius: 18px;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(1.04);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.82), transparent 52%),
+    linear-gradient(180deg, rgba(255, 248, 235, 0.98), rgba(247, 222, 188, 0.96));
+  box-shadow:
+    inset 0 0 0 2px rgba(240, 192, 126, 0.8),
+    0 10px 24px rgba(144, 87, 39, 0.26);
+}
+
+.tray-drag-preview::before {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  background: center / contain no-repeat var(--tray-image);
+  filter:
+    drop-shadow(0 0 10px rgba(255, 231, 121, 0.32))
+    drop-shadow(0 6px 10px rgba(120, 70, 32, 0.18));
+}
+
+.tray-tile--synthesized {
+  animation: tray-tile-synthesized-pop 420ms cubic-bezier(0.18, 0.92, 0.22, 1);
+}
+
+.tray-tile--synthesized::before {
+  filter:
+    drop-shadow(0 0 12px rgba(255, 231, 121, 0.8))
+    drop-shadow(0 6px 10px rgba(120, 70, 32, 0.2));
+}
+
+@keyframes tray-slot-synthesized-glow {
+  0% {
+    transform: scale(0.92);
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 224, 118, 0.92),
+      0 0 0 rgba(255, 201, 92, 0);
+  }
+
+  55% {
+    transform: scale(1.05);
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 205, 86, 0.96),
+      0 0 18px rgba(255, 201, 92, 0.38);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes tray-tile-synthesized-pop {
+  0% {
+    transform: scale(0.2) rotate(-12deg);
+    opacity: 0;
+  }
+
+  60% {
+    transform: scale(1.12) rotate(4deg);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
 .tile {
   --tile-scale: 1;
   --flower-image: url("./assets/flowers/flower_5.png");
@@ -1217,6 +1380,25 @@ body {
 
   .board-shell {
     padding: 0 2px 2px;
+  }
+
+  .collection-tray-panel {
+    width: calc(100% - 10px);
+    padding: 10px 10px 12px;
+    border-radius: 20px;
+  }
+
+  .collection-tray {
+    gap: 4px;
+  }
+
+  .collection-tray-title,
+  .collection-tray-count {
+    font-size: 12px;
+  }
+
+  .collection-tray-slot {
+    border-radius: 14px;
   }
 
 }

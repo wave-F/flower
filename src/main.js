@@ -38,10 +38,10 @@ const FIRST_LEVEL_TUTORIAL = {
   x: 2,
   y: 2,
   kind: "grass",
-  tip: "点击拔出杂草，下落花朵三连消除",
+  tip: "点击花朵，收进下方槽位",
 };
 
-const PERSISTENT_HINT_TEXT = "点击拔出，下落花朵三连消除";
+const PERSISTENT_HINT_TEXT = "点击花朵，收进下方 7 个槽位";
 
 const WINDMILL_ROW_TYPE = "windmillRow";
 const WINDMILL_COLUMN_TYPE = "windmillColumn";
@@ -51,6 +51,12 @@ const HIVE_TYPE = "hive";
 const HIVE_KIND = { key: "hive", label: "Hive", name: "蜂巢" };
 const HIVE_BEE_COUNT = 5;
 const FIRST_SCREEN_STATIC_ASSET_PATHS = ["./assets/HandPointer.png"];
+const GRASS_KIND_KEY = "grass";
+const TRAY_SIZE = 7;
+const COLLECTION_FLY_DURATION = 320;
+const PLANT_REPLACE_DURATION = 150;
+const PLANT_GROW_DURATION = 180;
+const ENABLE_TUTORIAL = false;
 
 export function initialize(doc = globalThis.document) {
   if (!doc) {
@@ -71,6 +77,7 @@ export function initialize(doc = globalThis.document) {
     getInteractionDisabled: () => state.isProcessing || state.isLevelCompleted || state.isLevelFailed,
   });
   let isTutorialVisible = false;
+  let trayDragState = null;
 
   const { columns: initialCols, rows: initialRows } = getCurrentLevelSettings();
   fitBoardToViewport({
@@ -81,9 +88,11 @@ export function initialize(doc = globalThis.document) {
     rows: initialRows,
   });
   renderBoardSlots({ boardElement: elements.boardElement, columns: initialCols, rows: initialRows, isHole });
+  renderCollectionTray();
   initializeDebugLevelPicker();
 
   elements.boardShellElement.addEventListener("click", onBoardClick);
+  elements.collectionTrayElement.addEventListener("pointerdown", onCollectionTrayPointerDown);
   elements.nextLevelButtonElement.addEventListener("click", onNextLevelButtonClick);
   elements.debugWindmillButtonElement.addEventListener("click", onDebugWindmillButtonClick);
   elements.debugHiveButtonElement.addEventListener("click", onDebugHiveButtonClick);
@@ -91,6 +100,9 @@ export function initialize(doc = globalThis.document) {
   elements.debugLevelJumpButtonElement.addEventListener("click", onDebugLevelJumpButtonClick);
   window.addEventListener("resize", onViewportResize);
   window.addEventListener("orientationchange", onViewportResize);
+  window.addEventListener("pointermove", onWindowPointerMove);
+  window.addEventListener("pointerup", onWindowPointerUp);
+  window.addEventListener("pointercancel", onWindowPointerCancel);
 
   startFpsCounter();
   const ready = resetBoard();
@@ -192,6 +204,7 @@ export function initialize(doc = globalThis.document) {
   }
 
   function onViewportResize() {
+    cancelTrayDrag();
     const { columns, rows } = getCurrentLevelSettings();
     fitBoardToViewport({
       boardElement: elements.boardElement,
@@ -210,10 +223,16 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
+    cancelTrayDrag();
+
     const { level, columns, rows, tileKinds } = getCurrentLevelSettings();
 
     prepareLevelState(state, level);
+    state.trayTiles = [];
     hudView.hideLevelOverlay();
+    hideTutorialGuide();
+    showPersistentHint();
+    renderCollectionTray();
 
     // Re-layout board for potential size change
     fitBoardToViewport({
@@ -301,25 +320,8 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
-    const tutorialTargetTile = isTutorialVisible ? getTutorialTargetTile() : null;
-    if (isTutorialVisible) {
-      if (!tutorialTargetTile) {
-        hideTutorialGuide();
-        return;
-      }
-
-      if (tile.id !== tutorialTargetTile.id) {
-        return;
-      }
-    }
-
-    const didCompleteTutorial = isTutorialVisible && tile.id === tutorialTargetTile.id;
-
     if (isHiveTile(tile)) {
       hideTutorialGuide();
-      if (didCompleteTutorial) {
-        showPersistentHint();
-      }
       void processHive(tile);
       return;
     }
@@ -327,9 +329,6 @@ export function initialize(doc = globalThis.document) {
     if (isWindmillTile(tile)) {
       const mergedWindmillPartner = findAdjacentWindmillPartner(tile, columns, rows);
       hideTutorialGuide();
-      if (didCompleteTutorial) {
-        showPersistentHint();
-      }
       if (mergedWindmillPartner) {
         void processMergedWindmills(tile, mergedWindmillPartner);
         return;
@@ -338,15 +337,90 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
-    hideTutorialGuide();
-    if (didCompleteTutorial) {
-      showPersistentHint();
+    if (state.trayTiles.length >= TRAY_SIZE) {
+      hudView.setStatus("槽位已满", "底部 7 槽已放满，当前原型暂不自动清除");
+      return;
     }
 
-    void processTurn(tile);
+    hideTutorialGuide();
+    void collectTileToTray(tile);
+  }
+
+  function onCollectionTrayPointerDown(event) {
+    if (state.isProcessing || state.isLevelCompleted || state.isLevelFailed) {
+      return;
+    }
+
+    const slotElement = event.target.closest(".collection-tray-slot");
+    if (!slotElement || !elements.collectionTrayElement.contains(slotElement)) {
+      return;
+    }
+
+    const trayIndex = Number(slotElement.dataset.slotIndex);
+    if (!Number.isInteger(trayIndex) || trayIndex < 0) {
+      return;
+    }
+
+    const trayTile = state.trayTiles[trayIndex] ?? null;
+    if (!trayTile) {
+      return;
+    }
+
+    if (!isTrayTileDraggable(trayTile)) {
+      hudView.setStatus("无法拖拽", "只有槽位里的花可以拖到棋盘里种植");
+      return;
+    }
+
+    event.preventDefault();
+    startTrayDrag({
+      pointerId: event.pointerId,
+      trayIndex,
+      trayTile,
+      sourceRect: slotElement.getBoundingClientRect(),
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
+  }
+
+  function onWindowPointerMove(event) {
+    if (!trayDragState || event.pointerId !== trayDragState.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    updateTrayDragPreviewPosition(event.clientX, event.clientY);
+  }
+
+  function onWindowPointerUp(event) {
+    if (!trayDragState || event.pointerId !== trayDragState.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    const currentDragState = trayDragState;
+    cancelTrayDrag();
+    const targetCell = getBoardDropCellAtPoint(event.clientX, event.clientY);
+    if (!targetCell) {
+      return;
+    }
+
+    void plantTrayTileToBoard(currentDragState.trayIndex, targetCell);
+  }
+
+  function onWindowPointerCancel(event) {
+    if (!trayDragState || event.pointerId !== trayDragState.pointerId) {
+      return;
+    }
+
+    cancelTrayDrag();
   }
 
   function updateTutorialGuide() {
+    if (!ENABLE_TUTORIAL) {
+      hideTutorialGuide();
+      return;
+    }
+
     const targetTile = getTutorialTargetTile();
     if (!targetTile) {
       hideTutorialGuide();
@@ -391,10 +465,6 @@ export function initialize(doc = globalThis.document) {
   }
 
   function hideTutorialGuide() {
-    if (!isTutorialVisible) {
-      return;
-    }
-
     isTutorialVisible = false;
     elements.tutorialGuideElement.hidden = true;
   }
@@ -405,6 +475,10 @@ export function initialize(doc = globalThis.document) {
   }
 
   function getTutorialTargetTile() {
+    if (!ENABLE_TUTORIAL) {
+      return null;
+    }
+
     const level = getCurrentLevel();
     if (level.id !== FIRST_LEVEL_TUTORIAL.levelId) {
       return null;
@@ -416,6 +490,411 @@ export function initialize(doc = globalThis.document) {
     }
 
     return tile;
+  }
+
+  async function collectTileToTray(tile) {
+    state.isProcessing = true;
+    state.movesUsed += 1;
+    renderHud();
+    tileView.syncInteractivity();
+
+    const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
+    const slotIndex = state.trayTiles.length;
+    const clickedCell = { x: tile.x, y: tile.y };
+    const targetRect = getCollectionTraySlotRect(slotIndex);
+    state.board[tile.y][tile.x] = null;
+    hudView.setStatus("收集中", `已收进第 ${slotIndex + 1} 个槽位，还剩 ${getRemainingMoves(state, moveLimit)} 步`);
+
+    await new Promise((resolve) => {
+      tileView.flyTile(tile.id, {
+        duration: COLLECTION_FLY_DURATION,
+        targetRect,
+        onArrive: resolve,
+      });
+    });
+
+    state.trayTiles.push(createTrayTileSnapshot(tile));
+    const traySynthesisResult = resolveTrayGrassSynthesis();
+    renderCollectionTray({ highlightedTileIds: traySynthesisResult.createdTileIds });
+
+    const collapseResult = applyRemovalsAndCollapse({
+      board: state.board,
+      tilesToRemove: [],
+      columns,
+      rows,
+      state,
+      tileKinds,
+      isHole,
+    });
+    await animateResolution({
+      result: collapseResult,
+      tileView,
+      removeDuration: 0,
+      fallDuration: FALL_DURATION,
+      flyDuration: FLY_DURATION,
+      isGoalKind,
+      getGoalRect: hudView.getGoalSwatchRect,
+      onGoalArrive: handleGoalArrive,
+    });
+
+    const cascadeResult = await resolveBoardMatches("本次", { clickedCell, previousResult: collapseResult });
+    await Promise.all(cascadeResult.goalFlights);
+
+    if (isCurrentLevelComplete(state, getCurrentLevel())) {
+      state.isLevelCompleted = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
+      hudView.showLevelOverlay({
+        title: "关卡完成",
+        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    if (state.movesUsed >= moveLimit) {
+      state.isLevelFailed = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
+      hudView.showLevelOverlay({
+        title: "步数用尽",
+        detail: `${getCurrentLevelLabel()} 未完成目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    state.isProcessing = false;
+    tileView.syncInteractivity();
+    renderHud();
+
+    const trayStatusSuffix = createTraySynthesisStatusSuffix(traySynthesisResult);
+    if (cascadeResult.cascadeCount > 0) {
+      hudView.setStatus("就绪", `本次触发 ${cascadeResult.cascadeCount} 次连锁，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}${trayStatusSuffix}`);
+    } else {
+      hudView.setStatus("就绪", `已收集 ${state.trayTiles.length} / ${TRAY_SIZE}${trayStatusSuffix}`);
+    }
+  }
+
+  async function plantTrayTileToBoard(trayIndex, targetCell) {
+    const trayTile = state.trayTiles[trayIndex] ?? null;
+    if (!trayTile || !isTrayTileDraggable(trayTile)) {
+      return;
+    }
+
+    const targetTile = state.board[targetCell.y]?.[targetCell.x] ?? null;
+    if (!targetTile) {
+      hudView.setStatus("无法种植", "只能拖到棋盘里的普通花/草格子上");
+      return;
+    }
+
+    if (targetTile.special) {
+      hudView.setStatus("无法种植", "特殊块上不能直接种花");
+      return;
+    }
+
+    state.isProcessing = true;
+    state.movesUsed += 1;
+    renderHud();
+    tileView.syncInteractivity();
+
+    const { moveLimit } = getCurrentLevelSettings();
+    state.trayTiles.splice(trayIndex, 1);
+    renderCollectionTray();
+    hudView.setStatus(
+      "种植中",
+      `种到 ${columnLabel(targetCell.x)} 列 ${targetCell.y + 1} 行，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
+    );
+
+    await new Promise((resolve) => {
+      tileView.shrinkTile(targetTile.id, {
+        duration: PLANT_REPLACE_DURATION,
+        onArrive: resolve,
+      });
+    });
+
+    const plantedTile = {
+      id: state.tileIdSeed++,
+      x: targetCell.x,
+      y: targetCell.y,
+      kind: TILE_KIND_MAP[trayTile.kindKey] ?? TILE_KIND_MAP.rose,
+    };
+    state.board[targetCell.y][targetCell.x] = plantedTile;
+
+    const metrics = tileView.getBoardMetrics();
+    tileView.mountTileForEntry(plantedTile, metrics);
+    await new Promise((resolve) => {
+      tileView.growTileIntoBoard(plantedTile.id, {
+        duration: PLANT_GROW_DURATION,
+        column: plantedTile.x,
+        row: plantedTile.y,
+        metrics,
+        onArrive: resolve,
+      });
+    });
+
+    const cascadeResult = await resolveBoardMatches("种植", {
+      clickedCell: { x: plantedTile.x, y: plantedTile.y },
+      previousResult: null,
+    });
+    await Promise.all(cascadeResult.goalFlights);
+
+    if (isCurrentLevelComplete(state, getCurrentLevel())) {
+      state.isLevelCompleted = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
+      hudView.showLevelOverlay({
+        title: "关卡完成",
+        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    if (state.movesUsed >= moveLimit) {
+      state.isLevelFailed = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
+      hudView.showLevelOverlay({
+        title: "步数用尽",
+        detail: `${getCurrentLevelLabel()} 未完成目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    state.isProcessing = false;
+    tileView.syncInteractivity();
+    renderHud();
+
+    if (cascadeResult.cascadeCount > 0) {
+      hudView.setStatus("就绪", `种植后触发 ${cascadeResult.cascadeCount} 次连锁，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}`);
+    } else {
+      hudView.setStatus("就绪", `已种下 ${plantedTile.kind.name}，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}`);
+    }
+  }
+
+  function renderCollectionTray({ highlightedTileIds = new Set() } = {}) {
+    const fragment = document.createDocumentFragment();
+    elements.collectionTrayElement.innerHTML = "";
+
+    for (let index = 0; index < TRAY_SIZE; index += 1) {
+      const slotElement = document.createElement("div");
+      slotElement.className = "collection-tray-slot";
+      slotElement.dataset.slotIndex = String(index);
+
+      const trayTile = state.trayTiles[index] ?? null;
+      if (trayTile) {
+        slotElement.classList.add("is-filled");
+        if (isTrayTileDraggable(trayTile)) {
+          slotElement.classList.add("collection-tray-slot--draggable");
+        }
+        slotElement.setAttribute("aria-label", `第 ${index + 1} 槽：${trayTile.label}`);
+        if (highlightedTileIds.has(trayTile.id)) {
+          slotElement.classList.add("collection-tray-slot--synthesized");
+        }
+
+        const iconElement = document.createElement("span");
+        iconElement.className = highlightedTileIds.has(trayTile.id)
+          ? "tray-tile tray-tile--synthesized"
+          : "tray-tile";
+        iconElement.setAttribute("aria-hidden", "true");
+        iconElement.style.setProperty("--tray-image", `url("${trayTile.assetPath}")`);
+        slotElement.appendChild(iconElement);
+      } else {
+        slotElement.setAttribute("aria-label", `第 ${index + 1} 槽：空`);
+      }
+
+      fragment.appendChild(slotElement);
+    }
+
+    elements.collectionTrayElement.appendChild(fragment);
+    elements.collectionTrayCountElement.textContent = `${state.trayTiles.length} / ${TRAY_SIZE}`;
+  }
+
+  function getCollectionTraySlotRect(slotIndex) {
+    const slotElement = elements.collectionTrayElement.querySelector(`[data-slot-index="${slotIndex}"]`);
+    return slotElement?.getBoundingClientRect() ?? null;
+  }
+
+  function isTrayTileDraggable(trayTile) {
+    return Boolean(trayTile && trayTile.kindKey !== GRASS_KIND_KEY);
+  }
+
+  function startTrayDrag({ pointerId, trayIndex, trayTile, sourceRect, clientX, clientY }) {
+    cancelTrayDrag();
+    const previewElement = document.createElement("span");
+    previewElement.className = "tray-drag-preview";
+    previewElement.style.width = `${sourceRect.width}px`;
+    previewElement.style.height = `${sourceRect.height}px`;
+    previewElement.style.setProperty("--tray-image", `url("${trayTile.assetPath}")`);
+    elements.flyLayerElement.appendChild(previewElement);
+
+    trayDragState = {
+      pointerId,
+      trayIndex,
+      previewElement,
+    };
+    updateTrayDragPreviewPosition(clientX, clientY);
+  }
+
+  function updateTrayDragPreviewPosition(clientX, clientY) {
+    if (!trayDragState?.previewElement) {
+      return;
+    }
+
+    trayDragState.previewElement.style.left = `${clientX}px`;
+    trayDragState.previewElement.style.top = `${clientY}px`;
+  }
+
+  function cancelTrayDrag() {
+    if (!trayDragState) {
+      return;
+    }
+
+    trayDragState.previewElement?.remove();
+    trayDragState = null;
+  }
+
+  function getBoardDropCellAtPoint(clientX, clientY) {
+    const boardRect = elements.boardElement.getBoundingClientRect();
+    if (
+      clientX < boardRect.left
+      || clientX > boardRect.right
+      || clientY < boardRect.top
+      || clientY > boardRect.bottom
+    ) {
+      return null;
+    }
+
+    const boardStyle = getComputedStyle(elements.boardElement);
+    const tileSize = parseFloat(boardStyle.getPropertyValue("--tile-size")) || 52;
+    const gap = parseFloat(boardStyle.getPropertyValue("--gap")) || 6;
+    const span = tileSize + gap;
+    const x = Math.floor((clientX - boardRect.left) / span);
+    const y = Math.floor((clientY - boardRect.top) / span);
+    const { columns, rows } = getCurrentLevelSettings();
+
+    if (x < 0 || x >= columns || y < 0 || y >= rows) {
+      return null;
+    }
+
+    if (isHole(x, y)) {
+      return null;
+    }
+
+    return { x, y };
+  }
+
+  function createTrayTileSnapshot(tile) {
+    return {
+      id: tile.id,
+      kindKey: tile.kind.key,
+      label: tile.special?.type ? `${tile.kind.name}道具` : tile.kind.name,
+      assetPath: getTrayTileAssetPath(tile),
+      sourceType: "collected",
+    };
+  }
+
+  function resolveTrayGrassSynthesis() {
+    let synthesizedCount = 0;
+    let clearedOnlyCount = 0;
+    const createdTileIds = new Set();
+
+    while (true) {
+      const grassIndices = [];
+      for (let index = 0; index < state.trayTiles.length; index += 1) {
+        if (state.trayTiles[index]?.kindKey === GRASS_KIND_KEY) {
+          grassIndices.push(index);
+        }
+      }
+
+      if (grassIndices.length < 3) {
+        break;
+      }
+
+      const consumedIndices = new Set(grassIndices.slice(0, 3));
+      state.trayTiles = state.trayTiles.filter((_, index) => !consumedIndices.has(index));
+
+      const synthesizedKind = pickRandomExistingBoardFlowerKind();
+      if (!synthesizedKind) {
+        clearedOnlyCount += 1;
+        continue;
+      }
+
+      const synthesizedTile = createSynthesizedTrayTile(synthesizedKind);
+      state.trayTiles.push(synthesizedTile);
+      createdTileIds.add(synthesizedTile.id);
+      synthesizedCount += 1;
+    }
+
+    return { synthesizedCount, clearedOnlyCount, createdTileIds };
+  }
+
+  function pickRandomExistingBoardFlowerKind() {
+    const flowerKinds = [];
+
+    for (const row of state.board) {
+      for (const tile of row) {
+        if (!tile || tile.special || tile.kind.key === GRASS_KIND_KEY) {
+          continue;
+        }
+
+        flowerKinds.push(tile.kind);
+      }
+    }
+
+    if (flowerKinds.length === 0) {
+      return null;
+    }
+
+    return flowerKinds[Math.floor(Math.random() * flowerKinds.length)];
+  }
+
+  function createSynthesizedTrayTile(kind) {
+    return {
+      id: state.tileIdSeed++,
+      kindKey: kind.key,
+      label: kind.name,
+      assetPath: kind.assetPath,
+      sourceType: "synthesized",
+    };
+  }
+
+  function createTraySynthesisStatusSuffix({ synthesizedCount, clearedOnlyCount }) {
+    if (synthesizedCount === 0 && clearedOnlyCount === 0) {
+      return "";
+    }
+
+    const parts = [];
+    if (synthesizedCount > 0) {
+      parts.push(`杂草合成 ${synthesizedCount} 次`);
+    }
+    if (clearedOnlyCount > 0) {
+      parts.push(`杂草清空 ${clearedOnlyCount} 次`);
+    }
+
+    return `，${parts.join("，")}`;
+  }
+
+  function getTrayTileAssetPath(tile) {
+    if (tile.special?.type === HIVE_TYPE) {
+      return "./assets/item_2.png";
+    }
+
+    if (tile.special?.type) {
+      return "./assets/item_1.png";
+    }
+
+    return tile.kind.assetPath;
   }
 
   async function processTurn(tile) {

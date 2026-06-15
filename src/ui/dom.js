@@ -13,6 +13,8 @@ export function getDomElements(doc = document) {
     boardShellElement: requireElement(doc, ".board-shell"),
     tileLayerElement: requireElement(doc, "#tileLayer"),
     flyLayerElement: requireElement(doc, "#flyLayer"),
+    collectionTrayElement: requireElement(doc, "#collectionTray"),
+    collectionTrayCountElement: requireElement(doc, "#collectionTrayCount"),
     levelBadgeElement: requireElement(doc, "#levelBadge"),
     moveLabelElement: requireElement(doc, "#moveLabel"),
     goalListElement: requireElement(doc, "#goalList"),
