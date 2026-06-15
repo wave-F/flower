@@ -38,10 +38,10 @@ const FIRST_LEVEL_TUTORIAL = {
   x: 2,
   y: 2,
   kind: "grass",
-  tip: "点击花朵直接拔掉，点击杂草收入槽位",
+  tip: "点击棋盘收入槽位，累计 5 合风车，10 合蜂巢",
 };
 
-const PERSISTENT_HINT_TEXT = "点击花朵直接拔掉，点击杂草收入槽位";
+const PERSISTENT_HINT_TEXT = "点击棋盘收入槽位，累计 5 合风车，10 合蜂巢";
 
 const WINDMILL_ROW_TYPE = "windmillRow";
 const WINDMILL_COLUMN_TYPE = "windmillColumn";
@@ -50,12 +50,15 @@ const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
 const HIVE_TYPE = "hive";
 const HIVE_KIND = { key: "hive", label: "Hive", name: "蜂巢" };
 const HIVE_BEE_COUNT = 5;
+const TRAY_WINDMILL_REWARD_TYPE = "trayWindmill";
 const FIRST_SCREEN_STATIC_ASSET_PATHS = ["./assets/HandPointer.png"];
 const GRASS_KIND_KEY = "grass";
 const TRAY_SIZE = 7;
 const COLLECTION_FLY_DURATION = 320;
 const PLANT_REPLACE_DURATION = 150;
 const PLANT_GROW_DURATION = 180;
+const TRAY_WINDMILL_THRESHOLD = 5;
+const TRAY_HIVE_THRESHOLD = 10;
 const ENABLE_TUTORIAL = false;
 
 export function initialize(doc = globalThis.document) {
@@ -229,6 +232,8 @@ export function initialize(doc = globalThis.document) {
 
     prepareLevelState(state, level);
     state.trayTiles = [];
+    state.trayCharge = 0;
+    state.pendingTrayRewards = [];
     hudView.hideLevelOverlay();
     hideTutorialGuide();
     showPersistentHint();
@@ -337,12 +342,6 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
-    if (tile.kind.key !== GRASS_KIND_KEY) {
-      hideTutorialGuide();
-      void processTurn(tile);
-      return;
-    }
-
     if (state.trayTiles.length >= TRAY_SIZE) {
       hudView.setStatus("槽位已满", "底部 7 槽已放满，当前原型暂不自动清除");
       return;
@@ -373,7 +372,7 @@ export function initialize(doc = globalThis.document) {
     }
 
     if (!isTrayTileDraggable(trayTile)) {
-      hudView.setStatus("无法拖拽", "只有槽位里的花可以拖到棋盘里种植");
+      hudView.setStatus("无法拖拽", "槽位里的草不能拖，花、风车、蜂巢可以拖到棋盘里");
       return;
     }
 
@@ -520,8 +519,8 @@ export function initialize(doc = globalThis.document) {
     });
 
     state.trayTiles.push(createTrayTileSnapshot(tile));
-    const traySynthesisResult = resolveTrayGrassSynthesis();
-    renderCollectionTray({ highlightedTileIds: traySynthesisResult.createdTileIds });
+    const trayRewardResult = resolveTrayRewardProgress();
+    renderCollectionTray({ highlightedTileIds: trayRewardResult.createdTileIds });
 
     const collapseResult = applyRemovalsAndCollapse({
       board: state.board,
@@ -578,7 +577,7 @@ export function initialize(doc = globalThis.document) {
     tileView.syncInteractivity();
     renderHud();
 
-    const trayStatusSuffix = createTraySynthesisStatusSuffix(traySynthesisResult);
+    const trayStatusSuffix = createTrayRewardStatusSuffix(trayRewardResult);
     if (cascadeResult.cascadeCount > 0) {
       hudView.setStatus("就绪", `本次触发 ${cascadeResult.cascadeCount} 次连锁，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}${trayStatusSuffix}`);
     } else {
@@ -610,7 +609,8 @@ export function initialize(doc = globalThis.document) {
 
     const { moveLimit } = getCurrentLevelSettings();
     state.trayTiles.splice(trayIndex, 1);
-    renderCollectionTray();
+    const trayRewardResult = resolvePendingTrayRewards();
+    renderCollectionTray({ highlightedTileIds: trayRewardResult.createdTileIds });
     hudView.setStatus(
       "种植中",
       `种到 ${columnLabel(targetCell.x)} 列 ${targetCell.y + 1} 行，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
@@ -623,12 +623,7 @@ export function initialize(doc = globalThis.document) {
       });
     });
 
-    const plantedTile = {
-      id: state.tileIdSeed++,
-      x: targetCell.x,
-      y: targetCell.y,
-      kind: TILE_KIND_MAP[trayTile.kindKey] ?? TILE_KIND_MAP.rose,
-    };
+    const plantedTile = createBoardTileFromTrayTile(trayTile, targetCell);
     state.board[targetCell.y][targetCell.x] = plantedTile;
 
     const metrics = tileView.getBoardMetrics();
@@ -684,7 +679,7 @@ export function initialize(doc = globalThis.document) {
     if (cascadeResult.cascadeCount > 0) {
       hudView.setStatus("就绪", `种植后触发 ${cascadeResult.cascadeCount} 次连锁，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}`);
     } else {
-      hudView.setStatus("就绪", `已种下 ${plantedTile.kind.name}，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}`);
+      hudView.setStatus("就绪", `已种下 ${trayTile.label}，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}`);
     }
   }
 
@@ -723,7 +718,7 @@ export function initialize(doc = globalThis.document) {
     }
 
     elements.collectionTrayElement.appendChild(fragment);
-    elements.collectionTrayCountElement.textContent = `${state.trayTiles.length} / ${TRAY_SIZE}`;
+    elements.collectionTrayCountElement.textContent = `${state.trayTiles.length} / ${TRAY_SIZE} | ${state.trayCharge} / ${TRAY_HIVE_THRESHOLD}`;
   }
 
   function getCollectionTraySlotRect(slotIndex) {
@@ -807,88 +802,117 @@ export function initialize(doc = globalThis.document) {
       label: tile.special?.type ? `${tile.kind.name}道具` : tile.kind.name,
       assetPath: getTrayTileAssetPath(tile),
       sourceType: "collected",
+      specialType: null,
     };
   }
 
-  function resolveTrayGrassSynthesis() {
-    let synthesizedCount = 0;
-    let clearedOnlyCount = 0;
+  function resolveTrayRewardProgress() {
+    state.trayCharge += 1;
+    if (state.trayCharge === TRAY_WINDMILL_THRESHOLD) {
+      state.pendingTrayRewards.push(TRAY_WINDMILL_REWARD_TYPE);
+    }
+    if (state.trayCharge >= TRAY_HIVE_THRESHOLD) {
+      state.pendingTrayRewards.push(HIVE_TYPE);
+      state.trayCharge = 0;
+    }
+
+    return resolvePendingTrayRewards();
+  }
+
+  function resolvePendingTrayRewards() {
     const createdTileIds = new Set();
+    let windmillCount = 0;
+    let hiveCount = 0;
 
-    while (true) {
-      const grassIndices = [];
-      for (let index = 0; index < state.trayTiles.length; index += 1) {
-        if (state.trayTiles[index]?.kindKey === GRASS_KIND_KEY) {
-          grassIndices.push(index);
-        }
+    while (state.pendingTrayRewards.length > 0 && state.trayTiles.length < TRAY_SIZE) {
+      const rewardType = state.pendingTrayRewards.shift();
+      const craftedTile = createCraftedTrayTile(rewardType);
+      state.trayTiles.push(craftedTile);
+      createdTileIds.add(craftedTile.id);
+
+      if (rewardType === HIVE_TYPE) {
+        hiveCount += 1;
+      } else {
+        windmillCount += 1;
       }
-
-      if (grassIndices.length < 3) {
-        break;
-      }
-
-      const consumedIndices = new Set(grassIndices.slice(0, 3));
-      state.trayTiles = state.trayTiles.filter((_, index) => !consumedIndices.has(index));
-
-      const synthesizedKind = pickRandomExistingBoardFlowerKind();
-      if (!synthesizedKind) {
-        clearedOnlyCount += 1;
-        continue;
-      }
-
-      const synthesizedTile = createSynthesizedTrayTile(synthesizedKind);
-      state.trayTiles.push(synthesizedTile);
-      createdTileIds.add(synthesizedTile.id);
-      synthesizedCount += 1;
     }
 
-    return { synthesizedCount, clearedOnlyCount, createdTileIds };
+    return {
+      createdTileIds,
+      windmillCount,
+      hiveCount,
+      pendingCount: state.pendingTrayRewards.length,
+    };
   }
 
-  function pickRandomExistingBoardFlowerKind() {
-    const flowerKinds = [];
-
-    for (const row of state.board) {
-      for (const tile of row) {
-        if (!tile || tile.special || tile.kind.key === GRASS_KIND_KEY) {
-          continue;
-        }
-
-        flowerKinds.push(tile.kind);
-      }
+  function createCraftedTrayTile(rewardType) {
+    if (rewardType === HIVE_TYPE) {
+      return {
+        id: state.tileIdSeed++,
+        kindKey: HIVE_KIND.key,
+        label: HIVE_KIND.name,
+        assetPath: "./assets/item_2.png",
+        sourceType: "craftedSpecial",
+        specialType: HIVE_TYPE,
+      };
     }
 
-    if (flowerKinds.length === 0) {
-      return null;
-    }
-
-    return flowerKinds[Math.floor(Math.random() * flowerKinds.length)];
-  }
-
-  function createSynthesizedTrayTile(kind) {
     return {
       id: state.tileIdSeed++,
-      kindKey: kind.key,
-      label: kind.name,
-      assetPath: kind.assetPath,
-      sourceType: "synthesized",
+      kindKey: WINDMILL_KIND.key,
+      label: WINDMILL_KIND.name,
+      assetPath: "./assets/item_1.png",
+      sourceType: "craftedSpecial",
+      specialType: TRAY_WINDMILL_REWARD_TYPE,
     };
   }
 
-  function createTraySynthesisStatusSuffix({ synthesizedCount, clearedOnlyCount }) {
-    if (synthesizedCount === 0 && clearedOnlyCount === 0) {
+  function createTrayRewardStatusSuffix({ windmillCount, hiveCount, pendingCount }) {
+    if (windmillCount === 0 && hiveCount === 0 && pendingCount === 0) {
       return "";
     }
 
     const parts = [];
-    if (synthesizedCount > 0) {
-      parts.push(`杂草合成 ${synthesizedCount} 次`);
+    if (windmillCount > 0) {
+      parts.push(`生成风车 ${windmillCount} 个`);
     }
-    if (clearedOnlyCount > 0) {
-      parts.push(`杂草清空 ${clearedOnlyCount} 次`);
+    if (hiveCount > 0) {
+      parts.push(`生成蜂巢 ${hiveCount} 个`);
+    }
+    if (pendingCount > 0) {
+      parts.push(`待放入 ${pendingCount} 个`);
     }
 
     return `，${parts.join("，")}`;
+  }
+
+  function createBoardTileFromTrayTile(trayTile, { x, y }) {
+    if (trayTile.specialType === HIVE_TYPE) {
+      return {
+        id: state.tileIdSeed++,
+        x,
+        y,
+        kind: HIVE_KIND,
+        special: { type: HIVE_TYPE },
+      };
+    }
+
+    if (trayTile.specialType === TRAY_WINDMILL_REWARD_TYPE) {
+      return {
+        id: state.tileIdSeed++,
+        x,
+        y,
+        kind: WINDMILL_KIND,
+        special: { type: Math.random() < 0.5 ? WINDMILL_ROW_TYPE : WINDMILL_COLUMN_TYPE },
+      };
+    }
+
+    return {
+      id: state.tileIdSeed++,
+      x,
+      y,
+      kind: TILE_KIND_MAP[trayTile.kindKey] ?? TILE_KIND_MAP.rose,
+    };
   }
 
   function getTrayTileAssetPath(tile) {
