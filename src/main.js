@@ -1176,27 +1176,10 @@ export function initialize(doc = globalThis.document) {
 function createLoadingView(doc = globalThis.document) {
   const overlayElement = doc?.querySelector("#loadingOverlay");
   const messageElement = doc?.querySelector("#loadingMessage");
-  const progressFillElement = doc?.querySelector("#loadingProgressFill");
-  const progressTextElement = doc?.querySelector("#loadingProgressText");
 
   function setMessage(message) {
     if (messageElement) {
       messageElement.textContent = message;
-    }
-  }
-
-  function setProgress(completed, total) {
-    const ratio = total > 0 ? Math.min(1, completed / total) : 1;
-    const percent = Math.round(ratio * 100);
-
-    if (progressFillElement) {
-      progressFillElement.style.width = `${percent}%`;
-    }
-
-    if (progressTextElement) {
-      progressTextElement.textContent = total > 0
-        ? `${percent}% (${completed}/${total})`
-        : `${percent}%`;
     }
   }
 
@@ -1216,7 +1199,6 @@ function createLoadingView(doc = globalThis.document) {
 
   return {
     setMessage,
-    setProgress,
     hide,
   };
 }
@@ -1323,22 +1305,16 @@ async function bootstrap(doc = globalThis.document) {
   }
 
   const loadingView = createLoadingView(doc);
-  loadingView.setMessage("正在加载首屏需要显示的图片资源...");
+  loadingView.setMessage("加载中");
 
-  const { results } = await preloadFirstScreenAssets((completed, total) => {
-    loadingView.setProgress(completed, total);
-    if (total > 0 && completed < total) {
-      loadingView.setMessage(`正在加载首屏资源 ${completed} / ${total}`);
-    }
-  });
+  const { results } = await preloadFirstScreenAssets();
 
   const failedResults = results.filter((result) => result.status !== "loaded");
   if (failedResults.length > 0) {
     console.warn("Some first-screen assets failed to preload.", failedResults);
   }
 
-  loadingView.setProgress(1, 1);
-  loadingView.setMessage("资源已就绪，正在进入游戏...");
+  loadingView.setMessage("加载中");
   loadingView.hide({ immediate: true });
 
   const app = initialize(doc);
