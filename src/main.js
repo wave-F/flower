@@ -14,8 +14,8 @@ import { applyRemovalsAndCollapse, createBoard, createFixedBoard, findTileById }
 import { applyBrickDamage, isBrickCell, isCurrentLevelComplete, getRemainingMoves, isHoleCell, prepareLevelState } from "./game/levelProgress.js";
 import { findMatchGroups } from "./game/match.js";
 import { createGameState } from "./state/gameState.js";
-import { columnLabel } from "./utils/grid.js";
-import { animateBoardEntry, animateResolution, animateWindmillFusion } from "./ui/animations.js";
+import { columnLabel, getOrthogonalNeighbors } from "./utils/grid.js";
+import { animateBoardEntry, animateChargeParticles, animateResolution, animateWindmillFusion } from "./ui/animations.js";
 import { fitBoardToViewport, renderBoardSlots } from "./ui/boardLayout.js";
 import { getDomElements } from "./ui/dom.js";
 import { createHudView } from "./ui/hudView.js";
@@ -50,11 +50,12 @@ const HIVE_TYPE = "hive";
 const HIVE_KIND = { key: "hive", label: "Lightball", name: "光球" };
 const FIRST_SCREEN_STATIC_ASSET_PATHS = ["./assets/HandPointer.png"];
 const GRASS_KIND_KEY = "grass";
-const RECYCLE_HIVE_THRESHOLD = 10;
+const RECYCLE_HIVE_THRESHOLD = 100;
+const GRASS_CHARGE_FACTOR = 2;
 const SPECIAL_CHARGE_VALUES = {
-  [WINDMILL_TYPE]: 1,
-  [MERGED_WINDMILL_TYPE]: 1,
-  [BOMB_TYPE]: 2,
+  [WINDMILL_TYPE]: 10,
+  [MERGED_WINDMILL_TYPE]: 10,
+  [BOMB_TYPE]: 20,
   [HIVE_TYPE]: 0,
 };
 const HIVE_REPLACE_DURATION = 150;
@@ -571,6 +572,14 @@ export function initialize(doc = globalThis.document) {
     return baseCharge * Math.max(1, multiplier);
   }
 
+  function calculateGrassChargeGain(grassCount) {
+    if (grassCount <= 0) {
+      return 0;
+    }
+
+    return GRASS_CHARGE_FACTOR * grassCount * grassCount;
+  }
+
   function showSpecialChainToast(triggeredSpecialCount) {
     if (triggeredSpecialCount >= 2) {
       hudView.showCascadeToast(getSpecialChainMultiplier(triggeredSpecialCount));
@@ -638,9 +647,33 @@ export function initialize(doc = globalThis.document) {
     };
   }
 
-  function handleRecycleArrive() {
-    state.recycleChargePreview += 1;
+  function handleRecycleArrive(chargeAmount = 1) {
+    state.recycleChargePreview += chargeAmount;
     renderCollectionTray();
+  }
+
+  function getTileGroupRect(tiles) {
+    const rects = tiles
+      .map((candidate) => tileView.getTileRect(candidate.id))
+      .filter(Boolean);
+
+    if (rects.length === 0) {
+      return null;
+    }
+
+    const left = Math.min(...rects.map((rect) => rect.left));
+    const top = Math.min(...rects.map((rect) => rect.top));
+    const right = Math.max(...rects.map((rect) => rect.right));
+    const bottom = Math.max(...rects.map((rect) => rect.bottom));
+
+    return {
+      left,
+      top,
+      right,
+      bottom,
+      width: right - left,
+      height: bottom - top,
+    };
   }
 
   async function processTurn(tile) {
@@ -651,14 +684,25 @@ export function initialize(doc = globalThis.document) {
     tileView.syncInteractivity();
 
     const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
+    const clickedTiles = tile.kind.key === GRASS_KIND_KEY
+      ? collectConnectedGrassTiles(tile, columns, rows)
+      : [tile];
+    const grassChargeOriginRect = tile.kind.key === GRASS_KIND_KEY
+      ? getTileGroupRect(clickedTiles)
+      : null;
+    const grassChargeGain = tile.kind.key === GRASS_KIND_KEY
+      ? calculateGrassChargeGain(clickedTiles.length)
+      : 0;
     hudView.setStatus(
       "结算中",
-      `删除 ${columnLabel(tile.x)} 列 ${tile.y + 1} 行，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
+      tile.kind.key === GRASS_KIND_KEY
+        ? `清除相连杂草 ${clickedTiles.length} 个，还剩 ${getRemainingMoves(state, moveLimit)} 步`
+        : `删除 ${columnLabel(tile.x)} 列 ${tile.y + 1} 行，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
     );
 
     const initialResult = applyRemovalsAndCollapse({
       board: state.board,
-      tilesToRemove: [tile],
+      tilesToRemove: clickedTiles,
       columns,
       rows,
       state,
@@ -666,6 +710,9 @@ export function initialize(doc = globalThis.document) {
       applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
+      specialCreationContext: tile.kind.key === GRASS_KIND_KEY
+        ? { allowSpecialCreation: false, clickedCell }
+        : null,
     });
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
     const initialRemovedTileResolution = classifyRemovedTiles(initialResult.removedTiles, recycleGoalProgress);
@@ -683,6 +730,15 @@ export function initialize(doc = globalThis.document) {
       onRecycleArrive: handleRecycleArrive,
       onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
+    const grassChargeFlights = grassChargeGain > 0
+      ? animateChargeParticles({
+        tileView,
+        originRect: grassChargeOriginRect,
+        chargeCount: grassChargeGain,
+        getRecycleRect: getRecycleTargetRect,
+        onRecycleArrive: handleRecycleArrive,
+      })
+      : Promise.resolve();
 
     const cascadeResult = await resolveBoardMatches("本次", {
       clickedCell,
@@ -692,11 +748,12 @@ export function initialize(doc = globalThis.document) {
     await Promise.all([
       initialResolution.goalFlights,
       initialResolution.recycleFlights,
+      grassChargeFlights,
       ...cascadeResult.goalFlights,
       ...cascadeResult.recycleFlights,
     ]);
 
-    const recycleResult = await resolveRecycleProgress(cascadeResult.recycleChargeGain);
+    const recycleResult = await resolveRecycleProgress(grassChargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       await completeLevelWithCleanup();
@@ -727,6 +784,42 @@ export function initialize(doc = globalThis.document) {
     } else {
       hudView.setStatus("就绪", `本次未形成后续消除${recycleStatusSuffix}`);
     }
+  }
+
+  function collectConnectedGrassTiles(startTile, columns, rows) {
+    if (!startTile || startTile.special || startTile.kind.key !== GRASS_KIND_KEY) {
+      return startTile ? [startTile] : [];
+    }
+
+    const stack = [{ x: startTile.x, y: startTile.y }];
+    const visited = new Set();
+    const connectedTiles = [];
+
+    while (stack.length > 0) {
+      const cell = stack.pop();
+      const key = `${cell.x},${cell.y}`;
+      if (visited.has(key)) {
+        continue;
+      }
+
+      visited.add(key);
+
+      const tile = state.board[cell.y]?.[cell.x] ?? null;
+      if (!tile || tile.special || tile.kind.key !== GRASS_KIND_KEY) {
+        continue;
+      }
+
+      connectedTiles.push(tile);
+
+      for (const neighbor of getOrthogonalNeighbors(cell.x, cell.y, columns, rows)) {
+        const neighborKey = `${neighbor.x},${neighbor.y}`;
+        if (!visited.has(neighborKey)) {
+          stack.push(neighbor);
+        }
+      }
+    }
+
+    return connectedTiles;
   }
 
   async function processMergedWindmills(primaryTile, secondaryTile) {
@@ -1330,18 +1423,21 @@ export function initialize(doc = globalThis.document) {
   }
 
   async function runEndgameSpecialCleanup() {
-    let cleanupCount = 0;
-
-    while (true) {
-      const specialTile = pickEndgameSpecialTile();
-      if (!specialTile) {
-        break;
-      }
-
-      cleanupCount += 1;
-      hudView.setStatus("收尾结算", `激活剩余道具 ${cleanupCount}`);
-      await resolveEndgameSpecialTile(specialTile);
+    const { columns, rows } = getCurrentLevelSettings();
+    const specialTiles = getEndgameSpecialTiles();
+    if (specialTiles.length === 0) {
+      return;
     }
+
+    const dualHivePair = findEndgameDualHivePair(specialTiles, columns, rows);
+    hudView.setStatus("收尾结算", `同时激活剩余道具 ${specialTiles.length} 个`);
+
+    if (dualHivePair) {
+      await resolveEndgameSpecialTile(dualHivePair[0]);
+      return;
+    }
+
+    await resolveEndgameSpecialBatch(specialTiles);
   }
 
   async function resolveEndgameSpecialTile(tile) {
@@ -1361,6 +1457,103 @@ export function initialize(doc = globalThis.document) {
     }
 
     await resolveEndgameChain(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds);
+  }
+
+  async function resolveEndgameSpecialBatch(specialTiles) {
+    if (specialTiles.length === 0) {
+      return;
+    }
+
+    const { columns, rows, tileKinds } = getCurrentLevelSettings();
+    const clickedCell = { x: specialTiles[0].x, y: specialTiles[0].y };
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const tilesToRemoveById = new Map();
+    const windmillEffects = [];
+    const bombEffects = [];
+    const hiveEffects = [];
+
+    for (const tile of specialTiles) {
+      const currentTile = state.board[tile.y]?.[tile.x] ?? null;
+      if (!currentTile?.special || currentTile.id !== tile.id) {
+        continue;
+      }
+
+      if (isHiveTile(currentTile)) {
+        const selectedKindKey = pickRandomBoardFlowerKind();
+        const targetTiles = selectedKindKey ? collectTilesByKindKey(selectedKindKey) : [];
+        tilesToRemoveById.set(currentTile.id, currentTile);
+        targetTiles.forEach((targetTile) => tilesToRemoveById.set(targetTile.id, targetTile));
+
+        if (targetTiles.length > 0) {
+          hiveEffects.push({
+            originTileId: currentTile.id,
+            originX: currentTile.x,
+            originY: currentTile.y,
+            triggeredByTileId: null,
+            targetTileIds: new Set(targetTiles.map((targetTile) => targetTile.id)),
+          });
+        }
+        continue;
+      }
+
+      const targets = getSpecialTargets(currentTile, columns, rows);
+      targets.forEach((targetTile) => tilesToRemoveById.set(targetTile.id, targetTile));
+
+      if (isWindmillTile(currentTile)) {
+        windmillEffects.push({
+          type: currentTile.special.type,
+          originTileId: currentTile.id,
+          originX: currentTile.x,
+          originY: currentTile.y,
+          triggeredByTileId: null,
+          mergedSourceTileIds: new Set(),
+          targetTileIds: new Set(targets.map((targetTile) => targetTile.id)),
+        });
+        continue;
+      }
+
+      if (isBombTile(currentTile)) {
+        bombEffects.push({
+          type: currentTile.special.type,
+          originTileId: currentTile.id,
+          originX: currentTile.x,
+          originY: currentTile.y,
+          triggeredByTileId: null,
+          targetTileIds: new Set(targets.map((targetTile) => targetTile.id)),
+        });
+      }
+    }
+
+    const tilesToRemove = [...tilesToRemoveById.values()];
+    if (tilesToRemove.length === 0) {
+      return;
+    }
+
+    const result = applyRemovalsAndCollapse({
+      board: state.board,
+      tilesToRemove,
+      tileGroups: [tilesToRemove],
+      columns,
+      rows,
+      state,
+      tileKinds,
+      specialCreationContext: { allowSpecialCreation: false, clickedCell },
+      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      isBlocked,
+      isHole,
+    });
+
+    if (windmillEffects.length > 0) {
+      result.windmillEffects = windmillEffects;
+    }
+    if (bombEffects.length > 0) {
+      result.bombEffects = bombEffects;
+    }
+    if (hiveEffects.length > 0) {
+      result.hiveEffects = hiveEffects;
+    }
+
+    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾" });
   }
 
   async function resolveEndgameChain(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds) {
@@ -1484,7 +1677,7 @@ export function initialize(doc = globalThis.document) {
     ]);
   }
 
-  function pickEndgameSpecialTile() {
+  function getEndgameSpecialTiles() {
     const { columns, rows } = getCurrentLevelSettings();
     const specialTiles = [];
 
@@ -1498,7 +1691,28 @@ export function initialize(doc = globalThis.document) {
     }
 
     specialTiles.sort((a, b) => a.y - b.y || a.x - b.x || a.id - b.id);
-    return specialTiles[0] ?? null;
+    return specialTiles;
+  }
+
+  function pickEndgameSpecialTile() {
+    return getEndgameSpecialTiles()[0] ?? null;
+  }
+
+  function findEndgameDualHivePair(specialTiles, columns, rows) {
+    const specialIds = new Set(specialTiles.map((tile) => tile.id));
+
+    for (const tile of specialTiles) {
+      if (!isHiveTile(tile)) {
+        continue;
+      }
+
+      const partner = findAdjacentHivePartner(tile, columns, rows);
+      if (partner && specialIds.has(partner.id)) {
+        return [tile, partner];
+      }
+    }
+
+    return null;
   }
 
   function createSpecialCreationContext(previousResult, clickedCell, allowSpecialCreation = true) {

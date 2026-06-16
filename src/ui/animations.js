@@ -233,6 +233,27 @@ export async function animateResolution({
   };
 }
 
+export function animateChargeParticles({
+  tileView,
+  originRect,
+  chargeCount,
+  getRecycleRect,
+  onRecycleArrive,
+} = {}) {
+  const recycleFlights = [];
+
+  queueSpecialChargeParticles({
+    tileView,
+    originRect,
+    chargeCount,
+    recycleFlights,
+    getRecycleRect,
+    onRecycleArrive,
+  });
+
+  return Promise.all(recycleFlights);
+}
+
 async function animateWindmillEffect({
   effect,
   removedTileById,
@@ -631,7 +652,12 @@ function queueSpecialChargeParticles({
     return;
   }
 
-  for (let index = 0; index < chargeCount; index += 1) {
+  const particleCount = Math.max(1, Math.floor(chargeCount / 10));
+  const baseChargePerParticle = Math.floor(chargeCount / particleCount);
+  const remainder = chargeCount % particleCount;
+
+  for (let index = 0; index < particleCount; index += 1) {
+    const chargeAmount = baseChargePerParticle + (index < remainder ? 1 : 0);
     recycleFlights.push(new Promise((resolve) => {
       setTimeout(() => {
         tileView.flyLightballParticle({
@@ -639,7 +665,7 @@ function queueSpecialChargeParticles({
           targetRect: getRecycleRect?.() ?? null,
           duration: SPECIAL_CHARGE_PARTICLE_DURATION,
           onArrive: () => {
-            onRecycleArrive?.();
+            onRecycleArrive?.(chargeAmount);
             resolve();
           },
         });
