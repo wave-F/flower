@@ -1,9 +1,8 @@
 export function createGameState(initialLevelIndex = 0) {
   return {
     board: [],
-    trayTiles: [],
-    trayCharge: 0,
-    pendingTrayRewards: [],
+    recycleCharge: 0,
+    recycleChargePreview: 0,
     tileIdSeed: 1,
     isProcessing: false,
     isLevelCompleted: false,

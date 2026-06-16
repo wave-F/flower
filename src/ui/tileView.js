@@ -194,6 +194,43 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     });
   }
 
+  function flyRewardToTile({ fromRect = null, toTileId, assetPath, duration, delay = 0, onArrive } = {}) {
+    const toElement = tileElements.get(toTileId);
+    if (!fromRect || !toElement || !assetPath) {
+      onArrive?.();
+      return;
+    }
+
+    const toRect = toElement.getBoundingClientRect();
+    const size = Math.max(28, Math.min(50, Math.max(fromRect.width, fromRect.height) * 1.05));
+    const startRect = {
+      left: fromRect.left + fromRect.width / 2 - size / 2,
+      top: fromRect.top + fromRect.height / 2 - size / 2,
+      width: size,
+      height: size,
+    };
+    const rewardElement = document.createElement("span");
+    rewardElement.className = "reward-flyer";
+    rewardElement.style.width = `${size}px`;
+    rewardElement.style.height = `${size}px`;
+    rewardElement.style.left = `${startRect.left}px`;
+    rewardElement.style.top = `${startRect.top}px`;
+    rewardElement.style.setProperty("--reward-image", `url("${assetPath}")`);
+    flyLayerElement.appendChild(rewardElement);
+
+    flyTileByBezier(rewardElement, startRect, {
+      duration,
+      delay,
+      endCenterX: toRect.left + toRect.width / 2,
+      endCenterY: toRect.top + toRect.height / 2,
+      startScale: 0.88,
+      endScale: 0.92,
+      fadeOut: false,
+      onFinish: () => rewardElement.remove(),
+      onArrive,
+    });
+  }
+
   function mergeTileIntoTile(
     fromTileId,
     toTileId,
@@ -668,6 +705,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     clearAllTiles,
     burstTile,
     flyBee,
+    flyRewardToTile,
     flyTile,
     getTileElement,
     getTileRect,

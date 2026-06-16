@@ -34,14 +34,12 @@ const NUM_TO_TILE_KEY = {
 };
 
 const FIRST_LEVEL_TUTORIAL = {
-  levelId: 1,
+  levelId: 10,
   x: 2,
   y: 2,
   kind: "grass",
-  tip: "点击棋盘收入槽位，累计 5 合风车，10 合蜂巢",
+  tip: "点击花朵或杂草直接消除",
 };
-
-const PERSISTENT_HINT_TEXT = "点击棋盘收入槽位，累计 5 合风车，10 合蜂巢";
 
 const WINDMILL_ROW_TYPE = "windmillRow";
 const WINDMILL_COLUMN_TYPE = "windmillColumn";
@@ -50,15 +48,12 @@ const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
 const HIVE_TYPE = "hive";
 const HIVE_KIND = { key: "hive", label: "Hive", name: "蜂巢" };
 const HIVE_BEE_COUNT = 5;
-const TRAY_WINDMILL_REWARD_TYPE = "trayWindmill";
 const FIRST_SCREEN_STATIC_ASSET_PATHS = ["./assets/HandPointer.png"];
 const GRASS_KIND_KEY = "grass";
-const TRAY_SIZE = 7;
-const COLLECTION_FLY_DURATION = 320;
-const PLANT_REPLACE_DURATION = 150;
-const PLANT_GROW_DURATION = 180;
-const TRAY_WINDMILL_THRESHOLD = 5;
-const TRAY_HIVE_THRESHOLD = 10;
+const RECYCLE_HIVE_THRESHOLD = 20;
+const HIVE_REPLACE_DURATION = 150;
+const HIVE_GROW_DURATION = 220;
+const HIVE_REWARD_FLIGHT_DURATION = 420;
 const ENABLE_TUTORIAL = false;
 
 export function initialize(doc = globalThis.document) {
@@ -80,7 +75,6 @@ export function initialize(doc = globalThis.document) {
     getInteractionDisabled: () => state.isProcessing || state.isLevelCompleted || state.isLevelFailed,
   });
   let isTutorialVisible = false;
-  let trayDragState = null;
 
   const { columns: initialCols, rows: initialRows } = getCurrentLevelSettings();
   fitBoardToViewport({
@@ -95,7 +89,6 @@ export function initialize(doc = globalThis.document) {
   initializeDebugLevelPicker();
 
   elements.boardShellElement.addEventListener("click", onBoardClick);
-  elements.collectionTrayElement.addEventListener("pointerdown", onCollectionTrayPointerDown);
   elements.nextLevelButtonElement.addEventListener("click", onNextLevelButtonClick);
   elements.debugWindmillButtonElement.addEventListener("click", onDebugWindmillButtonClick);
   elements.debugHiveButtonElement.addEventListener("click", onDebugHiveButtonClick);
@@ -103,9 +96,6 @@ export function initialize(doc = globalThis.document) {
   elements.debugLevelJumpButtonElement.addEventListener("click", onDebugLevelJumpButtonClick);
   window.addEventListener("resize", onViewportResize);
   window.addEventListener("orientationchange", onViewportResize);
-  window.addEventListener("pointermove", onWindowPointerMove);
-  window.addEventListener("pointerup", onWindowPointerUp);
-  window.addEventListener("pointercancel", onWindowPointerCancel);
 
   startFpsCounter();
   const ready = resetBoard();
@@ -207,7 +197,6 @@ export function initialize(doc = globalThis.document) {
   }
 
   function onViewportResize() {
-    cancelTrayDrag();
     const { columns, rows } = getCurrentLevelSettings();
     fitBoardToViewport({
       boardElement: elements.boardElement,
@@ -226,17 +215,13 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
-    cancelTrayDrag();
-
     const { level, columns, rows, tileKinds } = getCurrentLevelSettings();
 
     prepareLevelState(state, level);
-    state.trayTiles = [];
-    state.trayCharge = 0;
-    state.pendingTrayRewards = [];
+    state.recycleCharge = 0;
+    state.recycleChargePreview = 0;
     hudView.hideLevelOverlay();
     hideTutorialGuide();
-    showPersistentHint();
     renderCollectionTray();
 
     // Re-layout board for potential size change
@@ -342,82 +327,8 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
-    if (state.trayTiles.length >= TRAY_SIZE) {
-      hudView.setStatus("槽位已满", "底部 7 槽已放满，当前原型暂不自动清除");
-      return;
-    }
-
     hideTutorialGuide();
-    void collectTileToTray(tile);
-  }
-
-  function onCollectionTrayPointerDown(event) {
-    if (state.isProcessing || state.isLevelCompleted || state.isLevelFailed) {
-      return;
-    }
-
-    const slotElement = event.target.closest(".collection-tray-slot");
-    if (!slotElement || !elements.collectionTrayElement.contains(slotElement)) {
-      return;
-    }
-
-    const trayIndex = Number(slotElement.dataset.slotIndex);
-    if (!Number.isInteger(trayIndex) || trayIndex < 0) {
-      return;
-    }
-
-    const trayTile = state.trayTiles[trayIndex] ?? null;
-    if (!trayTile) {
-      return;
-    }
-
-    if (!isTrayTileDraggable(trayTile)) {
-      hudView.setStatus("无法拖拽", "槽位里的草不能拖，花、风车、蜂巢可以拖到棋盘里");
-      return;
-    }
-
-    event.preventDefault();
-    startTrayDrag({
-      pointerId: event.pointerId,
-      trayIndex,
-      trayTile,
-      sourceRect: slotElement.getBoundingClientRect(),
-      clientX: event.clientX,
-      clientY: event.clientY,
-    });
-  }
-
-  function onWindowPointerMove(event) {
-    if (!trayDragState || event.pointerId !== trayDragState.pointerId) {
-      return;
-    }
-
-    event.preventDefault();
-    updateTrayDragPreviewPosition(event.clientX, event.clientY);
-  }
-
-  function onWindowPointerUp(event) {
-    if (!trayDragState || event.pointerId !== trayDragState.pointerId) {
-      return;
-    }
-
-    event.preventDefault();
-    const currentDragState = trayDragState;
-    cancelTrayDrag();
-    const targetCell = getBoardDropCellAtPoint(event.clientX, event.clientY);
-    if (!targetCell) {
-      return;
-    }
-
-    void plantTrayTileToBoard(currentDragState.trayIndex, targetCell);
-  }
-
-  function onWindowPointerCancel(event) {
-    if (!trayDragState || event.pointerId !== trayDragState.pointerId) {
-      return;
-    }
-
-    cancelTrayDrag();
+    void processTurn(tile);
   }
 
   function updateTutorialGuide() {
@@ -474,11 +385,6 @@ export function initialize(doc = globalThis.document) {
     elements.tutorialGuideElement.hidden = true;
   }
 
-  function showPersistentHint() {
-    elements.persistentHintElement.textContent = PERSISTENT_HINT_TEXT;
-    elements.persistentHintElement.hidden = false;
-  }
-
   function getTutorialTargetTile() {
     if (!ENABLE_TUTORIAL) {
       return null;
@@ -497,434 +403,160 @@ export function initialize(doc = globalThis.document) {
     return tile;
   }
 
-  async function collectTileToTray(tile) {
-    state.isProcessing = true;
-    state.movesUsed += 1;
-    renderHud();
-    tileView.syncInteractivity();
+  function renderCollectionTray() {
+    const displayedCharge = Math.max(0, Math.min(RECYCLE_HIVE_THRESHOLD, state.recycleCharge + state.recycleChargePreview));
+    const chargePercent = displayedCharge / RECYCLE_HIVE_THRESHOLD;
 
-    const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
-    const slotIndex = state.trayTiles.length;
-    const clickedCell = { x: tile.x, y: tile.y };
-    const targetRect = getCollectionTraySlotRect(slotIndex);
-    state.board[tile.y][tile.x] = null;
-    hudView.setStatus("收集中", `已收进第 ${slotIndex + 1} 个槽位，还剩 ${getRemainingMoves(state, moveLimit)} 步`);
+    let meterElement = elements.collectionTrayElement.querySelector(".energy-meter");
+    let fillElement = meterElement?.querySelector(".energy-meter-fill") ?? null;
 
-    await new Promise((resolve) => {
-      tileView.flyTile(tile.id, {
-        duration: COLLECTION_FLY_DURATION,
-        targetRect,
-        onArrive: resolve,
-      });
-    });
+    if (!meterElement || !fillElement) {
+      elements.collectionTrayElement.innerHTML = "";
+      meterElement = document.createElement("div");
+      meterElement.className = "energy-meter";
+      meterElement.setAttribute("aria-hidden", "true");
 
-    state.trayTiles.push(createTrayTileSnapshot(tile));
-    const trayRewardResult = resolveTrayRewardProgress();
-    renderCollectionTray({ highlightedTileIds: trayRewardResult.createdTileIds });
+      fillElement = document.createElement("span");
+      fillElement.className = "energy-meter-fill";
 
-    const collapseResult = applyRemovalsAndCollapse({
-      board: state.board,
-      tilesToRemove: [],
-      columns,
-      rows,
-      state,
-      tileKinds,
-      isHole,
-    });
-    await animateResolution({
-      result: collapseResult,
-      tileView,
-      removeDuration: 0,
-      fallDuration: FALL_DURATION,
-      flyDuration: FLY_DURATION,
-      isGoalKind,
-      getGoalRect: hudView.getGoalSwatchRect,
-      onGoalArrive: handleGoalArrive,
-    });
-
-    const cascadeResult = await resolveBoardMatches("本次", { clickedCell, previousResult: collapseResult });
-    await Promise.all(cascadeResult.goalFlights);
-
-    if (isCurrentLevelComplete(state, getCurrentLevel())) {
-      state.isLevelCompleted = true;
-      state.isProcessing = false;
-      tileView.syncInteractivity();
-      renderHud();
-      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
-      hudView.showLevelOverlay({
-        title: "关卡完成",
-        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
-        actionLabel: getActionButtonLabel(),
-      });
-      return;
+      meterElement.appendChild(fillElement);
+      elements.collectionTrayElement.appendChild(meterElement);
     }
 
-    if (state.movesUsed >= moveLimit) {
-      state.isLevelFailed = true;
-      state.isProcessing = false;
-      tileView.syncInteractivity();
-      renderHud();
-      hudView.setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
-      hudView.showLevelOverlay({
-        title: "步数用尽",
-        detail: `${getCurrentLevelLabel()} 未完成目标`,
-        actionLabel: getActionButtonLabel(),
-      });
-      return;
-    }
-
-    state.isProcessing = false;
-    tileView.syncInteractivity();
-    renderHud();
-
-    const trayStatusSuffix = createTrayRewardStatusSuffix(trayRewardResult);
-    if (cascadeResult.cascadeCount > 0) {
-      hudView.setStatus("就绪", `本次触发 ${cascadeResult.cascadeCount} 次连锁，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}${trayStatusSuffix}`);
-    } else {
-      hudView.setStatus("就绪", `已收集 ${state.trayTiles.length} / ${TRAY_SIZE}${trayStatusSuffix}`);
-    }
+    fillElement.style.width = `${chargePercent * 100}%`;
+    elements.collectionTrayElement.setAttribute("aria-label", `当前蜂巢能量 ${displayedCharge} / ${RECYCLE_HIVE_THRESHOLD}`);
+    elements.collectionTrayCountElement.textContent = `${displayedCharge} / ${RECYCLE_HIVE_THRESHOLD}`;
   }
 
-  async function plantTrayTileToBoard(trayIndex, targetCell) {
-    const trayTile = state.trayTiles[trayIndex] ?? null;
-    if (!trayTile || !isTrayTileDraggable(trayTile)) {
-      return;
+  async function resolveRecycleProgress(removedTileCount) {
+    if (removedTileCount <= 0) {
+      state.recycleChargePreview = 0;
+      renderCollectionTray();
+      return { hiveCount: 0 };
     }
 
-    const targetTile = state.board[targetCell.y]?.[targetCell.x] ?? null;
-    if (!targetTile) {
-      hudView.setStatus("无法种植", "只能拖到棋盘里的普通花/草格子上");
-      return;
+    state.recycleCharge += removedTileCount;
+    state.recycleChargePreview = 0;
+    let hiveCount = 0;
+
+    while (state.recycleCharge >= RECYCLE_HIVE_THRESHOLD) {
+      const spawnedHive = await spawnRecycleHive();
+      if (!spawnedHive) {
+        state.recycleCharge = RECYCLE_HIVE_THRESHOLD;
+        break;
+      }
+
+      state.recycleCharge -= RECYCLE_HIVE_THRESHOLD;
+      hiveCount += 1;
     }
 
-    if (targetTile.special) {
-      hudView.setStatus("无法种植", "特殊块上不能直接种花");
-      return;
+    renderCollectionTray();
+    return { hiveCount };
+  }
+
+  async function spawnRecycleHive() {
+    const { columns, rows } = getCurrentLevelSettings();
+    const target = pickRandomReplaceableTile(columns, rows);
+    if (!target) {
+      return null;
     }
 
-    state.isProcessing = true;
-    state.movesUsed += 1;
-    renderHud();
-    tileView.syncInteractivity();
-
-    const { moveLimit } = getCurrentLevelSettings();
-    state.trayTiles.splice(trayIndex, 1);
-    const trayRewardResult = resolvePendingTrayRewards();
-    renderCollectionTray({ highlightedTileIds: trayRewardResult.createdTileIds });
-    hudView.setStatus(
-      "种植中",
-      `种到 ${columnLabel(targetCell.x)} 列 ${targetCell.y + 1} 行，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
-    );
+    hudView.setStatus("能量转化", `蜂巢落在 ${columnLabel(target.x)} 列 ${target.y + 1} 行`);
+    const recycleSourceRect = getRecycleSourceRect();
+    if (recycleSourceRect) {
+      await new Promise((resolve) => {
+        tileView.flyRewardToTile({
+          fromRect: recycleSourceRect,
+          toTileId: target.id,
+          assetPath: "./assets/item_2.png",
+          duration: HIVE_REWARD_FLIGHT_DURATION,
+          onArrive: resolve,
+        });
+      });
+    }
 
     await new Promise((resolve) => {
-      tileView.shrinkTile(targetTile.id, {
-        duration: PLANT_REPLACE_DURATION,
+      tileView.shrinkTile(target.id, {
+        duration: HIVE_REPLACE_DURATION,
         onArrive: resolve,
       });
     });
 
-    const plantedTile = createBoardTileFromTrayTile(trayTile, targetCell);
-    state.board[targetCell.y][targetCell.x] = plantedTile;
+    target.kind = HIVE_KIND;
+    target.special = { type: HIVE_TYPE };
 
     const metrics = tileView.getBoardMetrics();
-    tileView.mountTileForEntry(plantedTile, metrics);
+    tileView.mountTileForEntry(target, metrics);
     await new Promise((resolve) => {
-      tileView.growTileIntoBoard(plantedTile.id, {
-        duration: PLANT_GROW_DURATION,
-        column: plantedTile.x,
-        row: plantedTile.y,
+      tileView.growTileIntoBoard(target.id, {
+        duration: HIVE_GROW_DURATION,
+        column: target.x,
+        row: target.y,
         metrics,
         onArrive: resolve,
       });
     });
 
-    const cascadeResult = await resolveBoardMatches("种植", {
-      clickedCell: { x: plantedTile.x, y: plantedTile.y },
-      previousResult: null,
-    });
-    await Promise.all(cascadeResult.goalFlights);
-
-    if (isCurrentLevelComplete(state, getCurrentLevel())) {
-      state.isLevelCompleted = true;
-      state.isProcessing = false;
-      tileView.syncInteractivity();
-      renderHud();
-      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
-      hudView.showLevelOverlay({
-        title: "关卡完成",
-        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
-        actionLabel: getActionButtonLabel(),
-      });
-      return;
-    }
-
-    if (state.movesUsed >= moveLimit) {
-      state.isLevelFailed = true;
-      state.isProcessing = false;
-      tileView.syncInteractivity();
-      renderHud();
-      hudView.setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
-      hudView.showLevelOverlay({
-        title: "步数用尽",
-        detail: `${getCurrentLevelLabel()} 未完成目标`,
-        actionLabel: getActionButtonLabel(),
-      });
-      return;
-    }
-
-    state.isProcessing = false;
-    tileView.syncInteractivity();
-    renderHud();
-
-    if (cascadeResult.cascadeCount > 0) {
-      hudView.setStatus("就绪", `种植后触发 ${cascadeResult.cascadeCount} 次连锁，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}`);
-    } else {
-      hudView.setStatus("就绪", `已种下 ${trayTile.label}，已收集 ${state.trayTiles.length} / ${TRAY_SIZE}`);
-    }
+    return target;
   }
 
-  function renderCollectionTray({ highlightedTileIds = new Set() } = {}) {
-    const fragment = document.createDocumentFragment();
-    elements.collectionTrayElement.innerHTML = "";
+  function createRecycleStatusSuffix({ hiveCount }) {
+    return hiveCount > 0 ? `，自动生成蜂巢 ${hiveCount} 个` : "";
+  }
 
-    for (let index = 0; index < TRAY_SIZE; index += 1) {
-      const slotElement = document.createElement("div");
-      slotElement.className = "collection-tray-slot";
-      slotElement.dataset.slotIndex = String(index);
+  function getRecycleSourceRect() {
+    const fillElement = elements.collectionTrayElement.querySelector(".energy-meter-fill");
+    const fillRect = fillElement?.getBoundingClientRect() ?? null;
+    if (fillRect && fillRect.width >= 12 && fillRect.height >= 8) {
+      return fillRect;
+    }
 
-      const trayTile = state.trayTiles[index] ?? null;
-      if (trayTile) {
-        slotElement.classList.add("is-filled");
-        if (isTrayTileDraggable(trayTile)) {
-          slotElement.classList.add("collection-tray-slot--draggable");
-        }
-        slotElement.setAttribute("aria-label", `第 ${index + 1} 槽：${trayTile.label}`);
-        if (highlightedTileIds.has(trayTile.id)) {
-          slotElement.classList.add("collection-tray-slot--synthesized");
-        }
+    return elements.collectionTrayElement.getBoundingClientRect();
+  }
 
-        const iconElement = document.createElement("span");
-        iconElement.className = highlightedTileIds.has(trayTile.id)
-          ? "tray-tile tray-tile--synthesized"
-          : "tray-tile";
-        iconElement.setAttribute("aria-hidden", "true");
-        iconElement.style.setProperty("--tray-image", `url("${trayTile.assetPath}")`);
-        slotElement.appendChild(iconElement);
-      } else {
-        slotElement.setAttribute("aria-label", `第 ${index + 1} 槽：空`);
+  function getRecycleTargetRect() {
+    return elements.collectionTrayElement.querySelector(".energy-meter")?.getBoundingClientRect() ?? getRecycleSourceRect();
+  }
+
+  function createRecycleGoalProgressSnapshot() {
+    return { ...state.goalProgress };
+  }
+
+  function classifyRemovedTiles(removedTiles, recycleGoalProgress) {
+    const goalCounts = new Map(getCurrentLevel().goals.map((goal) => [goal.kind, goal.count]));
+    const goalTileIds = new Set();
+    const recycleTileIds = new Set();
+    let recycleChargeGain = 0;
+
+    for (const tile of removedTiles) {
+      const goalCount = goalCounts.get(tile.kind.key);
+      if (!goalCount) {
+        recycleTileIds.add(tile.id);
+        recycleChargeGain += 1;
+        continue;
       }
 
-      fragment.appendChild(slotElement);
-    }
-
-    elements.collectionTrayElement.appendChild(fragment);
-    elements.collectionTrayCountElement.textContent = `${state.trayTiles.length} / ${TRAY_SIZE} | ${state.trayCharge} / ${TRAY_HIVE_THRESHOLD}`;
-  }
-
-  function getCollectionTraySlotRect(slotIndex) {
-    const slotElement = elements.collectionTrayElement.querySelector(`[data-slot-index="${slotIndex}"]`);
-    return slotElement?.getBoundingClientRect() ?? null;
-  }
-
-  function isTrayTileDraggable(trayTile) {
-    return Boolean(trayTile && trayTile.kindKey !== GRASS_KIND_KEY);
-  }
-
-  function startTrayDrag({ pointerId, trayIndex, trayTile, sourceRect, clientX, clientY }) {
-    cancelTrayDrag();
-    const previewElement = document.createElement("span");
-    previewElement.className = "tray-drag-preview";
-    previewElement.style.width = `${sourceRect.width}px`;
-    previewElement.style.height = `${sourceRect.height}px`;
-    previewElement.style.setProperty("--tray-image", `url("${trayTile.assetPath}")`);
-    elements.flyLayerElement.appendChild(previewElement);
-
-    trayDragState = {
-      pointerId,
-      trayIndex,
-      previewElement,
-    };
-    updateTrayDragPreviewPosition(clientX, clientY);
-  }
-
-  function updateTrayDragPreviewPosition(clientX, clientY) {
-    if (!trayDragState?.previewElement) {
-      return;
-    }
-
-    trayDragState.previewElement.style.left = `${clientX}px`;
-    trayDragState.previewElement.style.top = `${clientY}px`;
-  }
-
-  function cancelTrayDrag() {
-    if (!trayDragState) {
-      return;
-    }
-
-    trayDragState.previewElement?.remove();
-    trayDragState = null;
-  }
-
-  function getBoardDropCellAtPoint(clientX, clientY) {
-    const boardRect = elements.boardElement.getBoundingClientRect();
-    if (
-      clientX < boardRect.left
-      || clientX > boardRect.right
-      || clientY < boardRect.top
-      || clientY > boardRect.bottom
-    ) {
-      return null;
-    }
-
-    const boardStyle = getComputedStyle(elements.boardElement);
-    const tileSize = parseFloat(boardStyle.getPropertyValue("--tile-size")) || 52;
-    const gap = parseFloat(boardStyle.getPropertyValue("--gap")) || 6;
-    const span = tileSize + gap;
-    const x = Math.floor((clientX - boardRect.left) / span);
-    const y = Math.floor((clientY - boardRect.top) / span);
-    const { columns, rows } = getCurrentLevelSettings();
-
-    if (x < 0 || x >= columns || y < 0 || y >= rows) {
-      return null;
-    }
-
-    if (isHole(x, y)) {
-      return null;
-    }
-
-    return { x, y };
-  }
-
-  function createTrayTileSnapshot(tile) {
-    return {
-      id: tile.id,
-      kindKey: tile.kind.key,
-      label: tile.special?.type ? `${tile.kind.name}道具` : tile.kind.name,
-      assetPath: getTrayTileAssetPath(tile),
-      sourceType: "collected",
-      specialType: null,
-    };
-  }
-
-  function resolveTrayRewardProgress() {
-    state.trayCharge += 1;
-    if (state.trayCharge === TRAY_WINDMILL_THRESHOLD) {
-      state.pendingTrayRewards.push(TRAY_WINDMILL_REWARD_TYPE);
-    }
-    if (state.trayCharge >= TRAY_HIVE_THRESHOLD) {
-      state.pendingTrayRewards.push(HIVE_TYPE);
-      state.trayCharge = 0;
-    }
-
-    return resolvePendingTrayRewards();
-  }
-
-  function resolvePendingTrayRewards() {
-    const createdTileIds = new Set();
-    let windmillCount = 0;
-    let hiveCount = 0;
-
-    while (state.pendingTrayRewards.length > 0 && state.trayTiles.length < TRAY_SIZE) {
-      const rewardType = state.pendingTrayRewards.shift();
-      const craftedTile = createCraftedTrayTile(rewardType);
-      state.trayTiles.push(craftedTile);
-      createdTileIds.add(craftedTile.id);
-
-      if (rewardType === HIVE_TYPE) {
-        hiveCount += 1;
-      } else {
-        windmillCount += 1;
+      const progress = recycleGoalProgress[tile.kind.key] ?? 0;
+      if (progress < goalCount) {
+        goalTileIds.add(tile.id);
+        recycleGoalProgress[tile.kind.key] = progress + 1;
+        continue;
       }
+
+      recycleTileIds.add(tile.id);
+      recycleChargeGain += 1;
     }
 
     return {
-      createdTileIds,
-      windmillCount,
-      hiveCount,
-      pendingCount: state.pendingTrayRewards.length,
+      goalTileIds,
+      recycleTileIds,
+      recycleChargeGain,
     };
   }
 
-  function createCraftedTrayTile(rewardType) {
-    if (rewardType === HIVE_TYPE) {
-      return {
-        id: state.tileIdSeed++,
-        kindKey: HIVE_KIND.key,
-        label: HIVE_KIND.name,
-        assetPath: "./assets/item_2.png",
-        sourceType: "craftedSpecial",
-        specialType: HIVE_TYPE,
-      };
-    }
-
-    return {
-      id: state.tileIdSeed++,
-      kindKey: WINDMILL_KIND.key,
-      label: WINDMILL_KIND.name,
-      assetPath: "./assets/item_1.png",
-      sourceType: "craftedSpecial",
-      specialType: TRAY_WINDMILL_REWARD_TYPE,
-    };
-  }
-
-  function createTrayRewardStatusSuffix({ windmillCount, hiveCount, pendingCount }) {
-    if (windmillCount === 0 && hiveCount === 0 && pendingCount === 0) {
-      return "";
-    }
-
-    const parts = [];
-    if (windmillCount > 0) {
-      parts.push(`生成风车 ${windmillCount} 个`);
-    }
-    if (hiveCount > 0) {
-      parts.push(`生成蜂巢 ${hiveCount} 个`);
-    }
-    if (pendingCount > 0) {
-      parts.push(`待放入 ${pendingCount} 个`);
-    }
-
-    return `，${parts.join("，")}`;
-  }
-
-  function createBoardTileFromTrayTile(trayTile, { x, y }) {
-    if (trayTile.specialType === HIVE_TYPE) {
-      return {
-        id: state.tileIdSeed++,
-        x,
-        y,
-        kind: HIVE_KIND,
-        special: { type: HIVE_TYPE },
-      };
-    }
-
-    if (trayTile.specialType === TRAY_WINDMILL_REWARD_TYPE) {
-      return {
-        id: state.tileIdSeed++,
-        x,
-        y,
-        kind: WINDMILL_KIND,
-        special: { type: Math.random() < 0.5 ? WINDMILL_ROW_TYPE : WINDMILL_COLUMN_TYPE },
-      };
-    }
-
-    return {
-      id: state.tileIdSeed++,
-      x,
-      y,
-      kind: TILE_KIND_MAP[trayTile.kindKey] ?? TILE_KIND_MAP.rose,
-    };
-  }
-
-  function getTrayTileAssetPath(tile) {
-    if (tile.special?.type === HIVE_TYPE) {
-      return "./assets/item_2.png";
-    }
-
-    if (tile.special?.type) {
-      return "./assets/item_1.png";
-    }
-
-    return tile.kind.assetPath;
+  function handleRecycleArrive() {
+    state.recycleChargePreview += 1;
+    renderCollectionTray();
   }
 
   async function processTurn(tile) {
@@ -949,22 +581,34 @@ export function initialize(doc = globalThis.document) {
       tileKinds,
       isHole,
     });
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const initialRemovedTileResolution = classifyRemovedTiles(initialResult.removedTiles, recycleGoalProgress);
     const initialResolution = await animateResolution({
       result: initialResult,
       tileView,
       removeDuration: REMOVE_DURATION,
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
-      isGoalKind,
+      isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
+      getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
+      onRecycleArrive: handleRecycleArrive,
     });
 
-    const cascadeResult = await resolveBoardMatches("本次", { clickedCell, previousResult: initialResult });
+    const cascadeResult = await resolveBoardMatches("本次", {
+      clickedCell,
+      previousResult: initialResult,
+      recycleGoalProgress,
+    });
     await Promise.all([
       initialResolution.goalFlights,
+      initialResolution.recycleFlights,
       ...cascadeResult.goalFlights,
+      ...cascadeResult.recycleFlights,
     ]);
+
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.recycleChargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       state.isLevelCompleted = true;
@@ -998,10 +642,11 @@ export function initialize(doc = globalThis.document) {
     tileView.syncInteractivity();
     renderHud();
 
+    const recycleStatusSuffix = createRecycleStatusSuffix(recycleResult);
     if (cascadeResult.cascadeCount > 0) {
-      hudView.setStatus("就绪", `本次触发 ${cascadeResult.cascadeCount} 次连锁`);
+      hudView.setStatus("就绪", `本次触发 ${cascadeResult.cascadeCount} 次连锁${recycleStatusSuffix}`);
     } else {
-      hudView.setStatus("就绪", "本次未形成连通块消除");
+      hudView.setStatus("就绪", `本次未形成后续连锁${recycleStatusSuffix}`);
     }
   }
 
@@ -1040,6 +685,8 @@ export function initialize(doc = globalThis.document) {
       tileKinds,
       isHole,
     });
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
     result.windmillEffects = specialChain.windmillEffects;
     result.hiveEffects = specialChain.hiveEffects;
     const resolution = await animateResolution({
@@ -1048,16 +695,26 @@ export function initialize(doc = globalThis.document) {
       removeDuration: REMOVE_DURATION,
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
-      isGoalKind,
+      isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
+      getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
+      onRecycleArrive: handleRecycleArrive,
     });
 
-    const cascadeResult = await resolveBoardMatches("大风车", { clickedCell, previousResult: result });
+    const cascadeResult = await resolveBoardMatches("大风车", {
+      clickedCell,
+      previousResult: result,
+      recycleGoalProgress,
+    });
     await Promise.all([
       resolution.goalFlights,
+      resolution.recycleFlights,
       ...cascadeResult.goalFlights,
+      ...cascadeResult.recycleFlights,
     ]);
+
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.recycleChargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       state.isLevelCompleted = true;
@@ -1091,10 +748,11 @@ export function initialize(doc = globalThis.document) {
     tileView.syncInteractivity();
     renderHud();
 
+    const recycleStatusSuffix = createRecycleStatusSuffix(recycleResult);
     if (cascadeResult.cascadeCount > 0) {
-      hudView.setStatus("就绪", `大风车触发 ${cascadeResult.cascadeCount} 次连锁`);
+      hudView.setStatus("就绪", `大风车触发 ${cascadeResult.cascadeCount} 次连锁${recycleStatusSuffix}`);
     } else {
-      hudView.setStatus("就绪", `大风车合成清除了 ${result.removedTiles.length} 个格子`);
+      hudView.setStatus("就绪", `大风车合成清除了 ${result.removedTiles.length} 个格子${recycleStatusSuffix}`);
     }
   }
 
@@ -1121,6 +779,8 @@ export function initialize(doc = globalThis.document) {
       tileKinds,
       isHole,
     });
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
     result.windmillEffects = specialChain.windmillEffects;
     result.hiveEffects = specialChain.hiveEffects;
     const resolution = await animateResolution({
@@ -1129,16 +789,26 @@ export function initialize(doc = globalThis.document) {
       removeDuration: REMOVE_DURATION,
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
-      isGoalKind,
+      isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
+      getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
+      onRecycleArrive: handleRecycleArrive,
     });
 
-    const cascadeResult = await resolveBoardMatches("风车", { clickedCell, previousResult: result });
+    const cascadeResult = await resolveBoardMatches("风车", {
+      clickedCell,
+      previousResult: result,
+      recycleGoalProgress,
+    });
     await Promise.all([
       resolution.goalFlights,
+      resolution.recycleFlights,
       ...cascadeResult.goalFlights,
+      ...cascadeResult.recycleFlights,
     ]);
+
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.recycleChargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       state.isLevelCompleted = true;
@@ -1172,10 +842,11 @@ export function initialize(doc = globalThis.document) {
     tileView.syncInteractivity();
     renderHud();
 
+    const recycleStatusSuffix = createRecycleStatusSuffix(recycleResult);
     if (cascadeResult.cascadeCount > 0) {
-      hudView.setStatus("就绪", `风车触发 ${cascadeResult.cascadeCount} 次连锁`);
+      hudView.setStatus("就绪", `风车触发 ${cascadeResult.cascadeCount} 次连锁${recycleStatusSuffix}`);
     } else {
-      hudView.setStatus("就绪", "风车未形成后续连通块消除");
+      hudView.setStatus("就绪", `风车未形成后续连通块消除${recycleStatusSuffix}`);
     }
   }
 
@@ -1202,6 +873,8 @@ export function initialize(doc = globalThis.document) {
       tileKinds,
       isHole,
     });
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
     result.windmillEffects = specialChain.windmillEffects;
     result.hiveEffects = specialChain.hiveEffects;
     const resolution = await animateResolution({
@@ -1210,16 +883,26 @@ export function initialize(doc = globalThis.document) {
       removeDuration: REMOVE_DURATION,
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
-      isGoalKind,
+      isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
+      getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
+      onRecycleArrive: handleRecycleArrive,
     });
 
-    const cascadeResult = await resolveBoardMatches("蜂巢", { clickedCell, previousResult: result });
+    const cascadeResult = await resolveBoardMatches("蜂巢", {
+      clickedCell,
+      previousResult: result,
+      recycleGoalProgress,
+    });
     await Promise.all([
       resolution.goalFlights,
+      resolution.recycleFlights,
       ...cascadeResult.goalFlights,
+      ...cascadeResult.recycleFlights,
     ]);
+
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.recycleChargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       state.isLevelCompleted = true;
@@ -1253,16 +936,19 @@ export function initialize(doc = globalThis.document) {
     tileView.syncInteractivity();
     renderHud();
 
+    const recycleStatusSuffix = createRecycleStatusSuffix(recycleResult);
     if (cascadeResult.cascadeCount > 0) {
-      hudView.setStatus("就绪", `蜂巢触发 ${cascadeResult.cascadeCount} 次连锁`);
+      hudView.setStatus("就绪", `蜂巢触发 ${cascadeResult.cascadeCount} 次连锁${recycleStatusSuffix}`);
     } else {
-      hudView.setStatus("就绪", "蜂巢未形成后续连通块消除");
+      hudView.setStatus("就绪", `蜂巢未形成后续连通块消除${recycleStatusSuffix}`);
     }
   }
 
-  async function resolveBoardMatches(contextLabel, { clickedCell, previousResult = null } = {}) {
+  async function resolveBoardMatches(contextLabel, { clickedCell, previousResult = null, recycleGoalProgress = createRecycleGoalProgressSnapshot() } = {}) {
     let cascadeCount = 0;
+    let recycleChargeGain = 0;
     const goalFlights = [];
+    const recycleFlights = [];
     const { columns, rows, tileKinds } = getCurrentLevelSettings();
 
     while (cascadeCount < MAX_CASCADE_COUNT) {
@@ -1286,6 +972,8 @@ export function initialize(doc = globalThis.document) {
         isHole,
         specialCreationContext: createSpecialCreationContext(previousResult, clickedCell),
       });
+      const removedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
+      recycleChargeGain += removedTileResolution.recycleChargeGain;
       previousResult = result;
       const resolution = await animateResolution({
         result,
@@ -1293,18 +981,21 @@ export function initialize(doc = globalThis.document) {
         removeDuration: REMOVE_DURATION,
         fallDuration: FALL_DURATION,
         flyDuration: FLY_DURATION,
-        isGoalKind,
+        isGoalTile: (candidate) => removedTileResolution.goalTileIds.has(candidate.id),
         getGoalRect: hudView.getGoalSwatchRect,
+        getRecycleRect: getRecycleTargetRect,
         onGoalArrive: handleGoalArrive,
+        onRecycleArrive: handleRecycleArrive,
       });
       goalFlights.push(resolution.goalFlights);
+      recycleFlights.push(resolution.recycleFlights);
     }
 
     if (cascadeCount >= MAX_CASCADE_COUNT) {
       hudView.setStatus("连锁停止", `${contextLabel}已达到 ${MAX_CASCADE_COUNT} 次连锁上限`);
     }
 
-    return { cascadeCount, goalFlights };
+    return { cascadeCount, goalFlights, recycleFlights, recycleChargeGain };
   }
 
   function createSpecialCreationContext(previousResult, clickedCell) {
@@ -1338,7 +1029,7 @@ export function initialize(doc = globalThis.document) {
     }
 
     const { columns, rows } = getCurrentLevelSettings();
-    const target = pickRandomWindmillTestTarget(columns, rows);
+    const target = pickRandomReplaceableTile(columns, rows);
     if (!target) {
       hudView.setStatus("测试道具", "当前没有可替换的普通花");
       return;
@@ -1358,7 +1049,7 @@ export function initialize(doc = globalThis.document) {
     }
 
     const { columns, rows } = getCurrentLevelSettings();
-    const target = pickRandomWindmillTestTarget(columns, rows);
+    const target = pickRandomReplaceableTile(columns, rows);
     if (!target) {
       hudView.setStatus("测试蜂巢", "当前没有可替换的普通花");
       return;
@@ -1370,7 +1061,7 @@ export function initialize(doc = globalThis.document) {
     hudView.setStatus("测试蜂巢", `已在 ${columnLabel(target.x)} 列 ${target.y + 1} 行生成蜂巢`);
   }
 
-  function pickRandomWindmillTestTarget(columns, rows) {
+  function pickRandomReplaceableTile(columns, rows) {
     const flowerTiles = [];
     const fallbackTiles = [];
 
@@ -1382,7 +1073,7 @@ export function initialize(doc = globalThis.document) {
         }
 
         fallbackTiles.push(tile);
-        if (tile.kind.key !== "grass") {
+        if (tile.kind.key !== GRASS_KIND_KEY) {
           flowerTiles.push(tile);
         }
       }

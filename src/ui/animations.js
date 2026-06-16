@@ -36,9 +36,11 @@ export async function animateResolution({
   removeDuration,
   fallDuration,
   flyDuration,
-  isGoalKind,
+  isGoalTile,
   getGoalRect,
+  getRecycleRect,
   onGoalArrive,
+  onRecycleArrive,
 }) {
   const removedTileGroups = result.removedTileGroups?.length ? result.removedTileGroups : [result.removedTiles];
   const windmillEffects = [
@@ -51,7 +53,8 @@ export async function animateResolution({
   ];
   const hasSpecialEffects = windmillEffects.length > 0 || hiveEffects.length > 0;
   const windmillTimings = WINDMILL_TIMINGS;
-  const flights = [];
+  const goalFlights = [];
+  const recycleFlights = [];
 
   if (hasSpecialEffects) {
     const removedTileById = new Map(result.removedTiles.map((tile) => [tile.id, tile]));
@@ -86,13 +89,16 @@ export async function animateResolution({
           launchSpecialEffect,
           ancestorEffectIds: nextAncestorEffectIds,
           animatedTileIds,
-          flights,
+          goalFlights,
+          recycleFlights,
           tileView,
           windmillTimings,
           flyDuration,
-          isGoalKind,
+          isGoalTile,
           getGoalRect,
+          getRecycleRect,
           onGoalArrive,
+          onRecycleArrive,
         })
         : animateHiveEffect({
           result,
@@ -101,12 +107,15 @@ export async function animateResolution({
           launchSpecialEffect,
           ancestorEffectIds: nextAncestorEffectIds,
           animatedTileIds,
-          flights,
+          goalFlights,
+          recycleFlights,
           tileView,
           flyDuration,
-          isGoalKind,
+          isGoalTile,
           getGoalRect,
+          getRecycleRect,
           onGoalArrive,
+          onRecycleArrive,
         });
 
       effectPromises.set(effect.originTileId, promise);
@@ -131,7 +140,8 @@ export async function animateResolution({
     await wait(fallDuration);
 
     return {
-      goalFlights: Promise.all(flights),
+      goalFlights: Promise.all(goalFlights),
+      recycleFlights: Promise.all(recycleFlights),
     };
   }
 
@@ -139,16 +149,25 @@ export async function animateResolution({
     const delay = groupIndex * GROUP_FLY_STAGGER;
 
     for (const tile of group) {
-      const isGoalTile = isGoalKind?.(tile.kind.key);
+      const shouldFlyToGoal = isGoalTile?.(tile);
 
-      if (!isGoalTile) {
-        setTimeout(() => {
-          tileView.flyTile(tile.id, { duration: flyDuration });
-        }, delay);
+      if (!shouldFlyToGoal) {
+        recycleFlights.push(new Promise((resolve) => {
+          setTimeout(() => {
+            tileView.flyTile(tile.id, {
+              duration: flyDuration,
+              targetRect: getRecycleRect?.() ?? null,
+              onArrive: () => {
+                onRecycleArrive?.(tile);
+                resolve();
+              },
+            });
+          }, delay);
+        }));
         continue;
       }
 
-      flights.push(new Promise((resolve) => {
+      goalFlights.push(new Promise((resolve) => {
         setTimeout(() => {
           tileView.flyTile(tile.id, {
             duration: flyDuration,
@@ -170,7 +189,8 @@ export async function animateResolution({
   await wait(fallDuration);
 
   return {
-    goalFlights: Promise.all(flights),
+    goalFlights: Promise.all(goalFlights),
+    recycleFlights: Promise.all(recycleFlights),
   };
 }
 
@@ -181,13 +201,16 @@ async function animateWindmillEffect({
   launchSpecialEffect,
   ancestorEffectIds,
   animatedTileIds,
-  flights,
+  goalFlights,
+  recycleFlights,
   tileView,
   windmillTimings,
   flyDuration,
-  isGoalKind,
+  isGoalTile,
   getGoalRect,
+  getRecycleRect,
   onGoalArrive,
+  onRecycleArrive,
 }) {
   const consumedTileIds = effect.mergedSourceTileIds ?? new Set();
 
@@ -225,8 +248,8 @@ async function animateWindmillEffect({
     animatedTileIds.add(tile.id);
 
     // 目标花：飞向 HUD 目标槽位（与蜂巢一致），而不是被吹散到屏幕外。
-    if (isGoalKind?.(tile.kind.key)) {
-      flights.push(new Promise((resolve) => {
+    if (isGoalTile?.(tile)) {
+      goalFlights.push(new Promise((resolve) => {
         tileView.flyTile(tile.id, {
           duration: flyDuration,
           targetRect: getGoalRect?.(tile.kind.key) ?? null,
@@ -239,13 +262,16 @@ async function animateWindmillEffect({
       continue;
     }
 
-    // 普通花：沿风车朝向吹散。
-    const direction = getWindmillBurstDirection(tile, effect);
-    tileView.burstTile(tile.id, {
-      duration: windmillTimings.flowerFlyDuration,
-      directionX: direction.x,
-      directionY: direction.y,
-    });
+    recycleFlights.push(new Promise((resolve) => {
+      tileView.flyTile(tile.id, {
+        duration: Math.max(flyDuration, windmillTimings.flowerFlyDuration),
+        targetRect: getRecycleRect?.() ?? null,
+        onArrive: () => {
+          onRecycleArrive?.(tile);
+          resolve();
+        },
+      });
+    }));
   }
 
   await Promise.all([
@@ -261,12 +287,15 @@ async function animateHiveEffect({
   launchSpecialEffect,
   ancestorEffectIds,
   animatedTileIds,
-  flights,
+  goalFlights,
+  recycleFlights,
   tileView,
   flyDuration,
-  isGoalKind,
+  isGoalTile,
   getGoalRect,
+  getRecycleRect,
   onGoalArrive,
+  onRecycleArrive,
 }) {
   const beeArrivals = [];
   const childEffectPromises = [];
@@ -281,9 +310,9 @@ async function animateHiveEffect({
     }
 
     const beeDelay = index * HIVE_BEE_STAGGER;
-    const isGoalTile = isGoalKind?.(tile.kind.key);
+    const shouldFlyToGoal = isGoalTile?.(tile);
 
-    if (isGoalTile && !childEffect) {
+    if (shouldFlyToGoal && !childEffect) {
       animatedTileIds.add(tile.id);
       let resolveGoalFlight;
       const goalFlight = new Promise((resolve) => {
@@ -313,7 +342,7 @@ async function animateHiveEffect({
         });
       });
 
-      flights.push(goalFlight);
+      goalFlights.push(goalFlight);
       beeArrivals.push(beeArrival);
       return;
     }
@@ -337,8 +366,18 @@ async function animateHiveEffect({
           }
 
           setTimeout(() => {
-            tileView.flyTile(tile.id, { duration: flyDuration });
-            resolve();
+            const recycleFlight = new Promise((resolveRecycleFlight) => {
+              tileView.flyTile(tile.id, {
+                duration: flyDuration,
+                targetRect: getRecycleRect?.() ?? null,
+                onArrive: () => {
+                  onRecycleArrive?.(tile);
+                  resolveRecycleFlight();
+                  resolve();
+                },
+              });
+            });
+            recycleFlights.push(recycleFlight);
           }, HIVE_FLOWER_DELAY);
         },
       });
@@ -357,36 +396,6 @@ async function animateHiveEffect({
 
 function getWindmillTotalDuration(timings) {
   return timings.spinUpDuration + timings.burstDuration + timings.fadeDuration;
-}
-
-function getWindmillBurstDirection(tile, windmillEffect) {
-  if (windmillEffect.type === MERGED_WINDMILL_TYPE) {
-    const deltaX = tile.x - windmillEffect.originX;
-    const deltaY = tile.y - windmillEffect.originY;
-    if (Math.abs(deltaX) >= Math.abs(deltaY)) {
-      return {
-        x: deltaX === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(deltaX),
-        y: (Math.random() - 0.5) * 0.2,
-      };
-    }
-
-    return {
-      x: (Math.random() - 0.5) * 0.2,
-      y: deltaY === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(deltaY),
-    };
-  }
-
-  if (windmillEffect.type === "windmillRow") {
-    return {
-      x: tile.x < windmillEffect.originX ? -1 : 1,
-      y: (Math.random() - 0.5) * 0.18,
-    };
-  }
-
-  return {
-    x: (Math.random() - 0.5) * 0.18,
-    y: tile.y < windmillEffect.originY ? -1 : 1,
-  };
 }
 
 export async function animateBoardEntry({ board, tileView, columns, rows, entryGrowDuration, entryTileDelay }) {

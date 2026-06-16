@@ -12,6 +12,19 @@
 
 export const LEVELS = [
   {
+    id: 10,
+    columns: 8,
+    rows: 10,
+    moveLimit: 24,
+    tileKinds: [1, 2, 3, 4, 5, 0],
+    goals: [
+      { kind: 1, count: 18 },
+      { kind: 3, count: 18 },
+      { kind: 5, count: 16 },
+  
+    ],
+  },
+  {
     id: 1,
     columns: 5,
     rows: 5,
@@ -172,38 +185,6 @@ export const LEVELS = [
     goals: [
       { kind: 2, count: 16 },
       { kind: 4, count: 16 },
-      { kind: 6, count: 14 },
-    ],
-  },
-  {
-    id: 10,
-    columns: 8,
-    rows: 10,
-    moveLimit: 24,
-    tileKinds: [1, 2, 3, 4, 5, 6, 0],
-    holes: [
-      [3, 0],
-      [3, 1],
-      [3, 2],
-      [3, 3],
-      [3, 4],
-      [3, 5],
-      [3, 6],
-      [3, 7],
-      [3, 8],
-      [3, 9],
-      [0, 5],
-      [1, 5],
-      [2, 5],
-      [4, 5],
-      [5, 5],
-      [6, 5],
-      [7, 5],
-    ],
-    goals: [
-      { kind: 1, count: 18 },
-      { kind: 3, count: 18 },
-      { kind: 5, count: 16 },
       { kind: 6, count: 14 },
     ],
   },

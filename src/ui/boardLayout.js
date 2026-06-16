@@ -3,7 +3,7 @@ export function fitBoardToViewport({ boardElement, boardShellElement, tileLayerE
   const shellHeight = boardShellElement.clientHeight || 640;
   const gap = shellWidth <= 360 ? 4 : 6;
   const usableWidth = shellWidth - 8;
-  const usableHeight = Math.floor(shellHeight * 0.56);
+  const usableHeight = shellHeight - 8;
   const tileSizeByWidth = Math.floor((usableWidth - gap * (columns - 1)) / columns);
   const tileSizeByHeight = Math.floor((usableHeight - gap * (rows - 1)) / rows);
   const tileSize = Math.max(34, Math.min(tileSizeByWidth, tileSizeByHeight));
