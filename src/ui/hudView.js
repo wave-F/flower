@@ -1,6 +1,8 @@
 import { TILE_KIND_MAP } from "../config/tileKinds.js";
 
 export function createHudView({ elements, appTitle }) {
+  let cascadeToastTimer = null;
+
   function renderLevelHud({ level, movesUsed, goalProgress }) {
     elements.levelBadgeElement.textContent = String(level.id);
     elements.moveLabelElement.textContent = String(Math.max(level.moveLimit - movesUsed, 0));
@@ -26,6 +28,29 @@ export function createHudView({ elements, appTitle }) {
 
   function setStatus(title, detail) {
     document.title = detail ? `${title} - ${appTitle}` : appTitle;
+  }
+
+  function showCascadeToast(multiplier) {
+    if (!Number.isFinite(multiplier) || multiplier < 2) {
+      return;
+    }
+
+    if (cascadeToastTimer) {
+      clearTimeout(cascadeToastTimer);
+      cascadeToastTimer = null;
+    }
+
+    elements.cascadeToastElement.hidden = false;
+    elements.cascadeToastElement.textContent = `连锁触发X${multiplier}`;
+    elements.cascadeToastElement.classList.remove("is-visible");
+    void elements.cascadeToastElement.offsetWidth;
+    elements.cascadeToastElement.classList.add("is-visible");
+
+    cascadeToastTimer = window.setTimeout(() => {
+      elements.cascadeToastElement.classList.remove("is-visible");
+      elements.cascadeToastElement.hidden = true;
+      cascadeToastTimer = null;
+    }, 820);
   }
 
   function renderGoalList(goals, goalProgress) {
@@ -96,6 +121,7 @@ export function createHudView({ elements, appTitle }) {
     showLevelOverlay,
     hideLevelOverlay,
     setStatus,
+    showCascadeToast,
     getGoalSwatchRect,
     bumpGoal,
     updateFps,

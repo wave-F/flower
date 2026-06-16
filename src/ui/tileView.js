@@ -106,6 +106,94 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.classList.toggle("tile--fusion-spinning", spin);
   }
 
+  function setLightballChargeState(tileId, active = true) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      return;
+    }
+
+    element.classList.toggle("is-lightball-charging", active);
+  }
+
+  function setLightballSelectedState(tileId, active = true) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      return;
+    }
+
+    element.classList.toggle("tile--lightball-selected", active);
+  }
+
+  function playLightningLinks({
+    fromTileId,
+    toTileIds = [],
+    duration = 220,
+    stagger = 24,
+    onTargetLock,
+  } = {}) {
+    const fromRect = getTileRect(fromTileId);
+    if (!fromRect || toTileIds.length === 0) {
+      return Promise.resolve();
+    }
+
+    const fromCenterX = fromRect.left + fromRect.width / 2;
+    const fromCenterY = fromRect.top + fromRect.height / 2;
+    const linkPromises = [];
+
+    toTileIds.forEach((targetTileId, index) => {
+      const targetRect = getTileRect(targetTileId);
+      if (!targetRect) {
+        return;
+      }
+
+      const toCenterX = targetRect.left + targetRect.width / 2;
+      const toCenterY = targetRect.top + targetRect.height / 2;
+      const deltaX = toCenterX - fromCenterX;
+      const deltaY = toCenterY - fromCenterY;
+      const length = Math.hypot(deltaX, deltaY);
+      const delay = index * stagger;
+      const angle = Math.atan2(deltaY, deltaX);
+      const linkElement = document.createElement("span");
+
+      linkElement.className = "lightning-link";
+      linkElement.style.left = `${fromCenterX}px`;
+      linkElement.style.top = `${fromCenterY}px`;
+      linkElement.style.width = `${length}px`;
+      linkElement.style.setProperty("--lightning-duration", `${duration}ms`);
+      linkElement.style.setProperty("--lightning-delay", `${delay}ms`);
+      linkElement.style.transform = `translateY(-50%) rotate(${angle}rad)`;
+      flyLayerElement.appendChild(linkElement);
+
+      const lockTimeout = setTimeout(() => {
+        onTargetLock?.(targetTileId);
+      }, delay + duration * 0.68);
+
+      const linkPromise = new Promise((resolve) => {
+        let settled = false;
+        const cleanup = () => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          clearTimeout(lockTimeout);
+          linkElement.remove();
+          resolve();
+        };
+
+        linkElement.addEventListener("animationend", cleanup, { once: true });
+        setTimeout(cleanup, delay + duration + 160);
+      });
+
+      requestAnimationFrame(() => {
+        linkElement.classList.add("is-active");
+      });
+      linkPromises.push(linkPromise);
+    });
+
+    return Promise.all(linkPromises);
+  }
+
   function flyTile(tileId, { duration, targetRect = null, onArrive } = {}) {
     const element = tileElements.get(tileId);
     if (!element) {
@@ -126,12 +214,6 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
         fadeOut: false,
         onArrive,
       });
-      return;
-    }
-
-    if (onArrive) {
-      releaseTileElement(element);
-      onArrive?.();
       return;
     }
 
@@ -227,6 +309,40 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
       endScale: 0.92,
       fadeOut: false,
       onFinish: () => rewardElement.remove(),
+      onArrive,
+    });
+  }
+
+  function flyLightballParticle({ fromRect = null, targetRect = null, duration, delay = 0, onArrive } = {}) {
+    if (!fromRect || !targetRect) {
+      onArrive?.();
+      return;
+    }
+
+    const size = Math.max(12, Math.min(22, Math.min(fromRect.width, fromRect.height) * 0.32));
+    const startRect = {
+      left: fromRect.left + fromRect.width / 2 - size / 2,
+      top: fromRect.top + fromRect.height / 2 - size / 2,
+      width: size,
+      height: size,
+    };
+    const particleElement = document.createElement("span");
+    particleElement.className = "lightball-particle";
+    particleElement.style.width = `${size}px`;
+    particleElement.style.height = `${size}px`;
+    particleElement.style.left = `${startRect.left}px`;
+    particleElement.style.top = `${startRect.top}px`;
+    flyLayerElement.appendChild(particleElement);
+
+    flyTileByBezier(particleElement, startRect, {
+      duration,
+      delay,
+      endCenterX: targetRect.left + targetRect.width / 2,
+      endCenterY: targetRect.top + targetRect.height / 2,
+      startScale: 0.82,
+      endScale: 0.28,
+      fadeOut: false,
+      onFinish: () => particleElement.remove(),
       onArrive,
     });
   }
@@ -663,21 +779,26 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.setAttribute("aria-label", `${specialLabel}${tile.kind.name}，第 ${tile.x + 1} 列，第 ${tile.y + 1} 行`);
   }
 
-  function getSpecialTileLabel(type) {
-    if (type === "windmillRow") {
-      return "横向风车，";
-    }
+  function clearLightballFxState(tileId) {
+    setLightballChargeState(tileId, false);
+    setLightballSelectedState(tileId, false);
+  }
 
-    if (type === "windmillColumn") {
-      return "纵向风车，";
+  function getSpecialTileLabel(type) {
+    if (type === "windmill") {
+      return "风车，";
     }
 
     if (type === "mergedWindmill") {
       return "大风车，";
     }
 
+    if (type === "bomb") {
+      return "炸弹，";
+    }
+
     if (type === "hive") {
-      return "蜂巢，";
+      return "光球，";
     }
 
     return "";
@@ -705,6 +826,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     clearAllTiles,
     burstTile,
     flyBee,
+    flyLightballParticle,
     flyRewardToTile,
     flyTile,
     getTileElement,
@@ -713,10 +835,14 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     getBoardMetrics: getCurrentBoardMetrics,
     mergeTileIntoTile,
     mountSpawnedTile,
+    playLightningLinks,
     pulseTile,
     mountTileForEntry,
     refreshTilePositions,
     popTile,
+    clearLightballFxState,
+    setLightballChargeState,
+    setLightballSelectedState,
     setWindmillFusionState,
     setTileBoardPosition,
     shrinkTile,

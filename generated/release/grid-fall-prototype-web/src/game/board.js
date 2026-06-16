@@ -4,8 +4,7 @@ const FOUR_MATCH_SIZE = 4;
 const FIVE_MATCH_SIZE = 5;
 const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
 const HIVE_KIND = { key: "hive", label: "Hive", name: "蜂巢" };
-const WINDMILL_ROW_TYPE = "windmillRow";
-const WINDMILL_COLUMN_TYPE = "windmillColumn";
+const WINDMILL_TYPE = "windmill";
 const HIVE_TYPE = "hive";
 
 export function createTile(state, x, y, kind) {
@@ -149,7 +148,7 @@ export function applyRemovalsAndCollapse({
       createdSpecialTiles.push({ tile: specialTile, fromRow: specialSourceTile.y });
     } else if (specialSourceTile && removedGroup.length === FOUR_MATCH_SIZE) {
       const specialTile = createTile(state, specialSourceTile.x, specialSourceTile.y, WINDMILL_KIND);
-      specialTile.special = { type: getFourMatchWindmillType(group) };
+      specialTile.special = { type: WINDMILL_TYPE };
       board[specialTile.y][specialTile.x] = specialTile;
       createdSpecialTiles.push({ tile: specialTile, fromRow: specialSourceTile.y });
     }
@@ -206,23 +205,6 @@ function pickStableTile(group) {
 
     return Math.abs(a.x - centerX) - Math.abs(b.x - centerX);
   })[0];
-}
-
-function getFourMatchWindmillType(group) {
-  const xs = group.map((tile) => tile.x);
-  const ys = group.map((tile) => tile.y);
-  const width = Math.max(...xs) - Math.min(...xs) + 1;
-  const height = Math.max(...ys) - Math.min(...ys) + 1;
-
-  if (width > height) {
-    return WINDMILL_COLUMN_TYPE;
-  }
-
-  if (height > width) {
-    return WINDMILL_ROW_TYPE;
-  }
-
-  return Math.random() < 0.5 ? WINDMILL_ROW_TYPE : WINDMILL_COLUMN_TYPE;
 }
 
 function collapseBoard({ board, columns, rows, state, tileKinds, isHole = () => false }) {

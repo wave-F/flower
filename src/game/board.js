@@ -3,10 +3,11 @@ import { findMatches } from "./match.js";
 const FOUR_MATCH_SIZE = 4;
 const FIVE_MATCH_SIZE = 5;
 const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
-const HIVE_KIND = { key: "hive", label: "Hive", name: "蜂巢" };
-const WINDMILL_ROW_TYPE = "windmillRow";
-const WINDMILL_COLUMN_TYPE = "windmillColumn";
+const HIVE_KIND = { key: "hive", label: "Lightball", name: "光球" };
+const BOMB_KIND = { key: "bomb", label: "Bomb", name: "炸弹" };
+const WINDMILL_TYPE = "windmill";
 const HIVE_TYPE = "hive";
+const BOMB_TYPE = "bomb";
 
 export function createTile(state, x, y, kind) {
   return {
@@ -143,13 +144,13 @@ export function applyRemovalsAndCollapse({
     }
 
     if (specialSourceTile && removedGroup.length >= FIVE_MATCH_SIZE) {
-      const specialTile = createTile(state, specialSourceTile.x, specialSourceTile.y, HIVE_KIND);
-      specialTile.special = { type: HIVE_TYPE };
+      const specialTile = createTile(state, specialSourceTile.x, specialSourceTile.y, BOMB_KIND);
+      specialTile.special = { type: BOMB_TYPE };
       board[specialTile.y][specialTile.x] = specialTile;
       createdSpecialTiles.push({ tile: specialTile, fromRow: specialSourceTile.y });
     } else if (specialSourceTile && removedGroup.length === FOUR_MATCH_SIZE) {
       const specialTile = createTile(state, specialSourceTile.x, specialSourceTile.y, WINDMILL_KIND);
-      specialTile.special = { type: getFourMatchWindmillType(group) };
+      specialTile.special = { type: WINDMILL_TYPE };
       board[specialTile.y][specialTile.x] = specialTile;
       createdSpecialTiles.push({ tile: specialTile, fromRow: specialSourceTile.y });
     }
@@ -168,6 +169,10 @@ export function applyRemovalsAndCollapse({
 }
 
 function pickMatchSpecialTile(group, specialCreationContext) {
+  if (specialCreationContext?.allowSpecialCreation === false) {
+    return null;
+  }
+
   if (group.length < FOUR_MATCH_SIZE || group.some((tile) => tile.special)) {
     return null;
   }
@@ -206,23 +211,6 @@ function pickStableTile(group) {
 
     return Math.abs(a.x - centerX) - Math.abs(b.x - centerX);
   })[0];
-}
-
-function getFourMatchWindmillType(group) {
-  const xs = group.map((tile) => tile.x);
-  const ys = group.map((tile) => tile.y);
-  const width = Math.max(...xs) - Math.min(...xs) + 1;
-  const height = Math.max(...ys) - Math.min(...ys) + 1;
-
-  if (width > height) {
-    return WINDMILL_COLUMN_TYPE;
-  }
-
-  if (height > width) {
-    return WINDMILL_ROW_TYPE;
-  }
-
-  return Math.random() < 0.5 ? WINDMILL_ROW_TYPE : WINDMILL_COLUMN_TYPE;
 }
 
 function collapseBoard({ board, columns, rows, state, tileKinds, isHole = () => false }) {

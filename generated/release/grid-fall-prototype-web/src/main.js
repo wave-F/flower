@@ -43,8 +43,7 @@ const FIRST_LEVEL_TUTORIAL = {
 
 const PERSISTENT_HINT_TEXT = "点击拔出，下落花朵三连消除";
 
-const WINDMILL_ROW_TYPE = "windmillRow";
-const WINDMILL_COLUMN_TYPE = "windmillColumn";
+const WINDMILL_TYPE = "windmill";
 const MERGED_WINDMILL_TYPE = "mergedWindmill";
 const WINDMILL_KIND = { key: "windmill", label: "Windmill", name: "风车" };
 const HIVE_TYPE = "hive";
@@ -814,8 +813,7 @@ export function initialize(doc = globalThis.document) {
   }
 
   function isWindmillTile(tile) {
-    return tile.special?.type === WINDMILL_ROW_TYPE
-      || tile.special?.type === WINDMILL_COLUMN_TYPE
+    return tile.special?.type === WINDMILL_TYPE
       || tile.special?.type === MERGED_WINDMILL_TYPE;
   }
 
@@ -837,7 +835,7 @@ export function initialize(doc = globalThis.document) {
 
     target.kind = WINDMILL_KIND;
     target.special = {
-      type: Math.random() < 0.5 ? WINDMILL_ROW_TYPE : WINDMILL_COLUMN_TYPE,
+      type: WINDMILL_TYPE,
     };
     tileView.updateTile(target);
     hudView.setStatus("测试风车", `已在 ${columnLabel(target.x)} 列 ${target.y + 1} 行生成风车`);
@@ -948,18 +946,22 @@ export function initialize(doc = globalThis.document) {
 
     const targets = [];
 
-    if (tile.special.type === WINDMILL_ROW_TYPE) {
-      for (let x = 0; x < columns; x += 1) {
-        const target = state.board[tile.y]?.[x] ?? null;
-        if (target) {
-          targets.push(target);
-        }
-      }
-      return targets;
-    }
+    const offsets = [
+      { x: 0, y: 0 },
+      { x: -1, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: 0, y: 1 },
+    ];
 
-    for (let y = 0; y < rows; y += 1) {
-      const target = state.board[y]?.[tile.x] ?? null;
+    for (const offset of offsets) {
+      const targetX = tile.x + offset.x;
+      const targetY = tile.y + offset.y;
+      if (targetX < 0 || targetX >= columns || targetY < 0 || targetY >= rows) {
+        continue;
+      }
+
+      const target = state.board[targetY]?.[targetX] ?? null;
       if (target) {
         targets.push(target);
       }

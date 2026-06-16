@@ -376,16 +376,9 @@ function getWindmillBurstDirection(tile, windmillEffect) {
     };
   }
 
-  if (windmillEffect.type === "windmillRow") {
-    return {
-      x: tile.x < windmillEffect.originX ? -1 : 1,
-      y: (Math.random() - 0.5) * 0.18,
-    };
-  }
-
   return {
-    x: (Math.random() - 0.5) * 0.18,
-    y: tile.y < windmillEffect.originY ? -1 : 1,
+    x: tile.x - windmillEffect.originX,
+    y: tile.y - windmillEffect.originY,
   };
 }
 

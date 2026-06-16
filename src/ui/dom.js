@@ -24,6 +24,7 @@ export function getDomElements(doc = document) {
     levelOverlayDetailElement: requireElement(doc, "#levelOverlayDetail"),
     fpsCounterElement: requireElement(doc, "#fpsCounter"),
     debugWindmillButtonElement: requireElement(doc, "#debugWindmillButton"),
+    debugBombButtonElement: requireElement(doc, "#debugBombButton"),
     debugHiveButtonElement: requireElement(doc, "#debugHiveButton"),
     debugLevelPickerButtonElement: requireElement(doc, "#debugLevelPickerButton"),
     debugLevelPanelElement: requireElement(doc, "#debugLevelPanel"),
@@ -32,6 +33,7 @@ export function getDomElements(doc = document) {
     tutorialGuideElement: requireElement(doc, "#tutorialGuide"),
     tutorialHandElement: requireElement(doc, "#tutorialHand"),
     tutorialTipElement: requireElement(doc, "#tutorialTip"),
+    cascadeToastElement: requireElement(doc, "#cascadeToast"),
     persistentHintElement: requireElement(doc, "#persistentHint"),
   };
 }

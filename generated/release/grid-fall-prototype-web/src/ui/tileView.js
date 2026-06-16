@@ -627,12 +627,8 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
   }
 
   function getSpecialTileLabel(type) {
-    if (type === "windmillRow") {
-      return "横向风车，";
-    }
-
-    if (type === "windmillColumn") {
-      return "纵向风车，";
+    if (type === "windmill") {
+      return "风车，";
     }
 
     if (type === "mergedWindmill") {

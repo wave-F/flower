@@ -19,7 +19,8 @@
     </div>
     <div class="global-debug-actions" aria-label="debug actions">
       <button id="debugWindmillButton" class="debug-button debug-button--windmill" type="button">测试风车</button>
-      <button id="debugHiveButton" class="debug-button debug-button--hive" type="button">测试蜂巢</button>
+      <button id="debugBombButton" class="debug-button debug-button--bomb" type="button">测试炸弹</button>
+      <button id="debugHiveButton" class="debug-button debug-button--hive" type="button">测试光球</button>
       <button id="debugLevelPickerButton" class="debug-button debug-button--level" type="button" aria-expanded="false" aria-controls="debugLevelPanel">选关</button>
       <div id="debugLevelPanel" class="debug-level-panel" hidden>
         <label class="debug-level-label" for="debugLevelSelect">跳转关卡</label>
@@ -67,6 +68,7 @@
             <img id="tutorialHand" class="tutorial-hand" src="./assets/HandPointer.png" alt="" />
             <div id="tutorialTip" class="tutorial-tip">点击花朵或杂草直接消除</div>
           </div>
+          <div id="cascadeToast" class="cascade-toast" aria-hidden="true" hidden></div>
           <div id="persistentHint" class="persistent-hint" hidden>点击花朵或杂草直接消除</div>
           <div id="levelOverlay" class="level-overlay" role="dialog" aria-modal="true" aria-labelledby="levelOverlayTitle" hidden>
             <div class="level-overlay-card">
