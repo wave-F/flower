@@ -62,7 +62,7 @@ const SPECIAL_CHARGE_VALUES = {
 const HIVE_REPLACE_DURATION = 150;
 const HIVE_GROW_DURATION = 220;
 const HIVE_REWARD_FLIGHT_DURATION = 720;
-const RECYCLE_BATCH_REFILL_DELAY = 96;
+const RECYCLE_BATCH_LAUNCH_STAGGER = 300;
 const RECYCLE_FINAL_SETTLE_DURATION = 280;
 const ENABLE_TUTORIAL = false;
 const BRICK_ASSET_PATHS = ["./assets/brick.png", "./assets/brick_2.png"];
@@ -577,41 +577,42 @@ export function initialize(doc = globalThis.document) {
 
     state.recycleChargePreview = 0;
     const totalCharge = state.recycleCharge + chargeGain;
-    let remainingCharge = totalCharge;
     const spawnAttempts = Math.floor(totalCharge / RECYCLE_HIVE_THRESHOLD);
+    const { columns, rows } = getCurrentLevelSettings();
+    const reservedTileIds = new Set();
+    const spawnTargets = [];
     let hiveCount = 0;
     let isBlockedAtThreshold = false;
 
-    state.recycleCharge = Math.min(totalCharge, RECYCLE_HIVE_THRESHOLD);
-    renderCollectionTray();
-
     for (let spawnIndex = 0; spawnIndex < spawnAttempts; spawnIndex += 1) {
-      state.recycleCharge = RECYCLE_HIVE_THRESHOLD;
-      renderCollectionTray();
-      const spawnedHive = await spawnRecycleHive();
-      if (!spawnedHive) {
-        state.recycleCharge = RECYCLE_HIVE_THRESHOLD;
-        renderCollectionTray();
+      const target = pickRandomReplaceableTile(columns, rows, reservedTileIds);
+      if (!target) {
         isBlockedAtThreshold = true;
         break;
       }
 
-      remainingCharge -= RECYCLE_HIVE_THRESHOLD;
-      hiveCount += 1;
-
-      if (remainingCharge <= 0) {
-        break;
-      }
-
-      if (spawnIndex < spawnAttempts - 1) {
-        await wait(RECYCLE_BATCH_REFILL_DELAY);
-      }
+      reservedTileIds.add(target.id);
+      spawnTargets.push(target);
     }
 
+    state.recycleCharge = Math.min(totalCharge, RECYCLE_HIVE_THRESHOLD);
+    renderCollectionTray();
+
+    if (spawnTargets.length > 0) {
+      state.recycleCharge = RECYCLE_HIVE_THRESHOLD;
+      renderCollectionTray();
+
+      const spawnedHives = await Promise.all(
+        spawnTargets.map((target, spawnIndex) => wait(spawnIndex * RECYCLE_BATCH_LAUNCH_STAGGER).then(() => spawnRecycleHive(target))),
+      );
+      hiveCount = spawnedHives.filter(Boolean).length;
+    }
+
+    const remainingCharge = totalCharge - hiveCount * RECYCLE_HIVE_THRESHOLD;
     const finalCharge = isBlockedAtThreshold ? RECYCLE_HIVE_THRESHOLD : remainingCharge;
     state.recycleCharge = finalCharge;
 
-    if (!isBlockedAtThreshold && spawnAttempts > 0) {
+    if (!isBlockedAtThreshold && hiveCount > 0) {
       await animateRecycleChargeSettle(RECYCLE_HIVE_THRESHOLD, finalCharge);
     } else {
       renderCollectionTray();
@@ -620,9 +621,7 @@ export function initialize(doc = globalThis.document) {
     return { chargeGain, hiveCount };
   }
 
-  async function spawnRecycleHive() {
-    const { columns, rows } = getCurrentLevelSettings();
-    const target = pickRandomReplaceableTile(columns, rows);
+  async function spawnRecycleHive(target) {
     if (!target) {
       return null;
     }
@@ -828,6 +827,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
       onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
@@ -1254,6 +1254,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
       onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
@@ -1346,6 +1347,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
       onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
@@ -1810,14 +1812,14 @@ export function initialize(doc = globalThis.document) {
     return tiles;
   }
 
-  function pickRandomReplaceableTile(columns, rows) {
+  function pickRandomReplaceableTile(columns, rows, excludedTileIds = null) {
     const flowerTiles = [];
     const fallbackTiles = [];
 
     for (let y = 0; y < rows; y += 1) {
       for (let x = 0; x < columns; x += 1) {
         const tile = state.board[y]?.[x] ?? null;
-        if (!tile || tile.special) {
+        if (!tile || tile.special || excludedTileIds?.has(tile.id)) {
           continue;
         }
 

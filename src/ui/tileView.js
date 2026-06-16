@@ -847,16 +847,30 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     });
   }
 
-  function flyLightballParticle({ fromRect = null, targetRect = null, duration, delay = 0, onArrive } = {}) {
+  function flyLightballParticle({
+    fromRect = null,
+    targetRect = null,
+    duration,
+    delay = 0,
+    spawnOffsetX = 0,
+    spawnOffsetY = 0,
+    targetOffsetX = 0,
+    targetOffsetY = 0,
+    arcMultiplier = 1,
+    liftMultiplier = 1,
+    curveSide = null,
+    onArrive,
+  } = {}) {
     if (!fromRect || !targetRect) {
       onArrive?.();
       return;
     }
 
-    const size = Math.max(12, Math.min(22, Math.min(fromRect.width, fromRect.height) * 0.32));
+    const sourceSize = Math.min(fromRect.width, fromRect.height);
+    const size = Math.max(7, Math.min(11, sourceSize * 0.16));
     const startRect = {
-      left: fromRect.left + fromRect.width / 2 - size / 2,
-      top: fromRect.top + fromRect.height / 2 - size / 2,
+      left: fromRect.left + fromRect.width / 2 + spawnOffsetX - size / 2,
+      top: fromRect.top + fromRect.height / 2 + spawnOffsetY - size / 2,
       width: size,
       height: size,
     };
@@ -866,16 +880,27 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     particleElement.style.height = `${size}px`;
     particleElement.style.left = `${startRect.left}px`;
     particleElement.style.top = `${startRect.top}px`;
+    particleElement.style.setProperty("--particle-size", `${Math.round(size)}px`);
+    particleElement.style.setProperty("--trail-length", `${Math.round(size * 4.8)}px`);
     flyLayerElement.appendChild(particleElement);
 
     flyTileByBezier(particleElement, startRect, {
       duration,
       delay,
-      endCenterX: targetRect.left + targetRect.width / 2,
-      endCenterY: targetRect.top + targetRect.height / 2,
+      endCenterX: targetRect.left + targetRect.width / 2 + targetOffsetX,
+      endCenterY: targetRect.top + targetRect.height / 2 + targetOffsetY,
       startScale: 0.82,
-      endScale: 0.28,
+      endScale: 0.26,
+      startOpacity: 0.96,
+      fadeIn: false,
       fadeOut: false,
+      rotate: false,
+      alignToPath: true,
+      arcMultiplier,
+      liftMultiplier,
+      curveSide,
+      bloomStrength: 0.028,
+      endOpacity: 0.74,
       onFinish: () => particleElement.remove(),
       onArrive,
     });
@@ -1681,6 +1706,12 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     fadeIn = false,
     fadeOut,
     rotate = true,
+    alignToPath = false,
+    arcMultiplier = 1,
+    liftMultiplier = 1,
+    curveSide = null,
+    bloomStrength = null,
+    endOpacity = 0.86,
     onFinish = () => releaseTileElement(element),
     onArrive,
   }) {
@@ -1693,9 +1724,9 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     const directionY = deltaY / distance;
     const normalX = -directionY;
     const normalY = directionX;
-    const side = Math.random() < 0.5 ? -1 : 1;
-    const arc = Math.min(210, Math.max(54, distance * (0.18 + Math.random() * 0.18))) * side;
-    const lift = Math.min(180, Math.max(38, distance * (0.08 + Math.random() * 0.08)));
+    const side = curveSide == null ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(curveSide) || 1;
+    const arc = Math.min(210, Math.max(54, distance * (0.18 + Math.random() * 0.18))) * arcMultiplier * side;
+    const lift = Math.min(180, Math.max(38, distance * (0.08 + Math.random() * 0.08))) * liftMultiplier;
     const firstT = 0.22 + Math.random() * 0.14;
     const secondT = 0.64 + Math.random() * 0.16;
     const control1 = {
@@ -1707,7 +1738,7 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
       y: startCenterY + deltaY * secondT - normalY * arc * (0.42 + Math.random() * 0.28) - lift * 0.42,
     };
     const rotation = (Math.random() < 0.5 ? -1 : 1) * (320 + Math.random() * 260);
-    const bloomStrength = 0.1 + Math.random() * 0.04;
+    const resolvedBloomStrength = Number.isFinite(bloomStrength) ? bloomStrength : 0.1 + Math.random() * 0.04;
     const startTime = performance.now() + delay;
     let animationFrame = 0;
     let settled = false;
@@ -1742,16 +1773,34 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
         endCenterY,
         progress,
       );
-      const bloom = Math.sin(rawProgress * Math.PI) * bloomStrength;
+      const tangent = alignToPath
+        ? cubicBezierTangent(
+          startCenterX,
+          startCenterY,
+          control1.x,
+          control1.y,
+          control2.x,
+          control2.y,
+          endCenterX,
+          endCenterY,
+          progress,
+        )
+        : null;
+      const bloom = Math.sin(rawProgress * Math.PI) * resolvedBloomStrength;
       const scale = lerp(startScale, endScale, progress) + bloom;
       const opacity = fadeOut
         ? Math.max(0, startOpacity - progress * progress)
         : fadeIn
           ? lerp(startOpacity, 1, progress)
-          : lerp(startOpacity, 0.86, progress);
+          : lerp(startOpacity, endOpacity, progress);
 
-      const rotationTransform = rotate ? ` rotate(${rotation * progress}deg)` : "";
-      element.style.transform = `translate(${point.x - startCenterX}px, ${point.y - startCenterY}px) scale(${scale})${rotationTransform}`;
+      if (alignToPath && tangent) {
+        const angle = Math.atan2(tangent.y, tangent.x) * (180 / Math.PI);
+        element.style.transform = `translate(${point.x - startCenterX}px, ${point.y - startCenterY}px) rotate(${angle}deg) scale(${scale})`;
+      } else {
+        const rotationTransform = rotate ? ` rotate(${rotation * progress}deg)` : "";
+        element.style.transform = `translate(${point.x - startCenterX}px, ${point.y - startCenterY}px) scale(${scale})${rotationTransform}`;
+      }
       element.style.opacity = String(opacity);
 
       if (rawProgress >= 1) {
@@ -1778,6 +1827,19 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     return {
       x: startX * startWeight + control1X * control1Weight + control2X * control2Weight + endX * endWeight,
       y: startY * startWeight + control1Y * control1Weight + control2Y * control2Weight + endY * endWeight,
+    };
+  }
+
+  function cubicBezierTangent(startX, startY, control1X, control1Y, control2X, control2Y, endX, endY, progress) {
+    const inverse = 1 - progress;
+
+    return {
+      x: 3 * inverse * inverse * (control1X - startX)
+        + 6 * inverse * progress * (control2X - control1X)
+        + 3 * progress * progress * (endX - control2X),
+      y: 3 * inverse * inverse * (control1Y - startY)
+        + 6 * inverse * progress * (control2Y - control1Y)
+        + 3 * progress * progress * (endY - control2Y),
     };
   }
 

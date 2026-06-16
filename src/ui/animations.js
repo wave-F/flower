@@ -12,7 +12,7 @@ const BOMB_PRIME_DURATION = 300;
 const BOMB_BLAST_RADIUS_CELLS = 2;
 const BOMB_POP_DURATION = 220;
 const BOMB_SHOCKWAVE_DURATION = 260;
-const SPECIAL_CHARGE_PARTICLE_DURATION = 420;
+const SPECIAL_CHARGE_PARTICLE_DURATION = 560;
 const SPECIAL_CHARGE_PARTICLE_STAGGER = 70;
 const MERGED_WINDMILL_TYPE = "mergedWindmill";
 const WINDMILL_FUSION_RETREAT_DURATION = 140;
@@ -774,9 +774,15 @@ function queueSpecialChargeParticles({
   for (let index = 0; index < chargeCount; index += 1) {
     recycleFlights.push(new Promise((resolve) => {
       setTimeout(() => {
+        const targetRect = getRecycleRect?.() ?? null;
+        if (!targetRect) {
+          resolve();
+          return;
+        }
+
         tileView.flyLightballParticle({
           fromRect: originRect,
-          targetRect: getRecycleRect?.() ?? null,
+          targetRect,
           duration: SPECIAL_CHARGE_PARTICLE_DURATION,
           onArrive: () => {
             onRecycleArrive?.();

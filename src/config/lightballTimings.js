@@ -14,9 +14,9 @@ export const DUAL_LIGHTBALL_TIMINGS = {
   "focusFadeOutDuration": 170,
   "flareDuration": 220,
   "flashDuration": 340,
-  "shockwaveDuration": 500,
+  "shockwaveDuration": 800,
   "shockwaveSizeMultiplier": 9.4,
-  "shockwaveShakeStrength": 1.6,
+  "shockwaveShakeStrength": 5,
   "popDuration": 180,
   "waveStagger": 14
 };
