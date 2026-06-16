@@ -779,13 +779,13 @@ body {
   z-index: 2;
   pointer-events: none;
 }
+
 .board-explosion-layer {
   position: absolute;
   inset: 0;
   z-index: 4;
   pointer-events: none;
 }
-
 
 .collection-tray-panel {
   position: relative;
@@ -891,6 +891,7 @@ body {
   inset: 4px;
   border-radius: 50%;
   background: center / contain no-repeat url("./assets/item_ball.png");
+  transform: scale(1.5);
   filter: drop-shadow(0 0 8px rgba(255, 223, 113, 0.52));
 }
 
