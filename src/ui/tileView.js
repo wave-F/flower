@@ -10,6 +10,7 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
   let windGustIdSeed = 0;
   let lightningLinkIdSeed = 0;
   const brickElements = new Map();
+  const crateElements = new Map();
 
   function clearAllTiles() {
     explosionFx.clear();
@@ -27,11 +28,16 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
       element.remove();
     }
 
+    for (const element of crateElements.values()) {
+      element.remove();
+    }
+
     brickElements.clear();
+    crateElements.clear();
     brickLayerElement?.replaceChildren();
   }
 
-  function renderBricks(bricks, metrics = getCurrentBoardMetrics()) {
+  function renderBricks(bricks, crates = new Map(), metrics = getCurrentBoardMetrics()) {
     clearBricks();
     if (!brickLayerElement) {
       return;
@@ -44,15 +50,55 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
       brickLayerElement.appendChild(element);
       brickElements.set(`${brick.x},${brick.y}`, element);
     }
+
+    for (const crate of crates.values()) {
+      const element = document.createElement("div");
+      element.className = `crate${crate.damage > 0 ? " crate--damaged" : ""}`;
+      setTileBoardPosition(element, crate.x, crate.y, metrics);
+      brickLayerElement.appendChild(element);
+      crateElements.set(`${crate.x},${crate.y}`, element);
+    }
   }
 
-  function refreshBrickPositions(bricks) {
+  function refreshBrickPositions(bricks, crates = new Map()) {
     const metrics = getCurrentBoardMetrics();
     for (const brick of bricks.values()) {
       const element = brickElements.get(`${brick.x},${brick.y}`);
       if (element) {
         setTileBoardPosition(element, brick.x, brick.y, metrics);
       }
+    }
+
+    for (const crate of crates.values()) {
+      const element = crateElements.get(`${crate.x},${crate.y}`);
+      if (element) {
+        setTileBoardPosition(element, crate.x, crate.y, metrics);
+      }
+    }
+  }
+
+  function playObstacleShatterEffects(cells = [], { type = "crate", assetPath } = {}) {
+    if (!assetPath || cells.length === 0) {
+      return;
+    }
+
+    const shardCount = cells.length >= 4
+      ? 1
+      : type === "crate"
+        ? 2
+        : 1;
+
+    for (const cell of cells) {
+      const key = `${cell.x},${cell.y}`;
+      const element = type === "crate"
+        ? crateElements.get(key)
+        : brickElements.get(key);
+      const rect = element?.getBoundingClientRect() ?? null;
+      if (!rect) {
+        continue;
+      }
+
+      spawnObstacleShatter(rect, { type, assetPath, shardCount });
     }
   }
 
@@ -941,6 +987,51 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     }
 
     launchFlight();
+  }
+
+  function spawnObstacleShatter(rect, { type = "crate", assetPath, shardCount = 1 } = {}) {
+    const shardConfigs = [
+      { clip: "polygon(0 0, 100% 0, 48% 54%, 0 46%)", dx: -18, dy: -18, rotate: -18, delay: 0 },
+      { clip: "polygon(48% 46%, 100% 38%, 100% 100%, 40% 100%)", dx: 16, dy: 18, rotate: 20, delay: 18 },
+    ].slice(0, shardCount);
+
+    for (const config of shardConfigs) {
+      const shard = document.createElement("span");
+      shard.className = `obstacle-shard obstacle-shard--${type}`;
+      shard.style.left = `${rect.left}px`;
+      shard.style.top = `${rect.top}px`;
+      shard.style.width = `${rect.width}px`;
+      shard.style.height = `${rect.height}px`;
+      shard.style.setProperty("--obstacle-image", `url(\"${assetPath}\")`);
+      shard.style.clipPath = config.clip;
+      flyLayerElement.appendChild(shard);
+
+      const animation = shard.animate([
+        {
+          opacity: 1,
+          transform: "translate(0, 0) scale(1) rotate(0deg)",
+          filter: type === "ice"
+            ? "drop-shadow(0 0 8px rgba(195, 240, 255, 0.42))"
+            : "drop-shadow(0 3px 6px rgba(92, 58, 28, 0.16))",
+        },
+        {
+          opacity: 0,
+          transform: `translate(${config.dx}px, ${config.dy}px) scale(0.78) rotate(${config.rotate}deg)`,
+          filter: type === "ice"
+            ? "drop-shadow(0 0 12px rgba(195, 240, 255, 0.18))"
+            : "drop-shadow(0 2px 4px rgba(92, 58, 28, 0.06))",
+        },
+      ], {
+        duration: 260,
+        delay: config.delay,
+        easing: "cubic-bezier(0.18, 0.92, 0.22, 1)",
+        fill: "forwards",
+      });
+
+      animation.finished.finally(() => {
+        shard.remove();
+      });
+    }
   }
 
   function mergeTileIntoTile(
@@ -2055,6 +2146,7 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     playLightningLinks,
     playWindLines,
     pulseTile,
+    playObstacleShatterEffects,
     mountTileForEntry,
     playBombExplosion,
     refreshBrickPositions,

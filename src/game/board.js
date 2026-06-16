@@ -151,7 +151,13 @@ export function applyRemovalsAndCollapse({
     }
   }
 
-  const obstacleResult = applyObstacleDamage?.(removedTiles) ?? { damagedBricks: [], brokenBricks: [] };
+  const obstacleResult = applyObstacleDamage?.(removedTiles) ?? {
+    damagedBricks: [],
+    brokenBricks: [],
+    damagedCrates: [],
+    brokenCrates: [],
+  };
+
   const collapseResult = collapseBoard({ board, columns, rows, state, tileKinds, isBlocked, isHole });
 
   return {
@@ -161,6 +167,8 @@ export function applyRemovalsAndCollapse({
     triggeredSpecialTiles,
     damagedBricks: obstacleResult.damagedBricks,
     brokenBricks: obstacleResult.brokenBricks,
+    damagedCrates: obstacleResult.damagedCrates ?? [],
+    brokenCrates: obstacleResult.brokenCrates ?? [],
     dropped: collapseResult.dropped,
     spawned: collapseResult.spawned,
   };
@@ -212,92 +220,307 @@ function pickStableTile(group) {
 }
 
 function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () => false, isHole = () => false }) {
-  const dropped = [];
-  const spawned = [];
+  const droppedById = new Map();
+  const spawnedById = new Map();
   const canOccupy = (x, y) => x >= 0 && x < columns && y >= 0 && y < rows && !isHole(x, y) && !isBlocked(x, y);
 
-  for (let y = rows - 1; y >= 0; y -= 1) {
-    for (let x = 0; x < columns; x += 1) {
-      if (!canOccupy(x, y) || board[y][x]) {
-        continue;
-      }
+  let moved = true;
+  while (moved) {
+    moved = false;
 
-      const source = findSourceCell(board, x, y, canOccupy);
-      if (source) {
-        const tile = board[source.y][source.x];
-        board[source.y][source.x] = null;
-        board[y][x] = tile;
-        dropped.push({ tile, fromX: source.x, fromY: source.y, toX: x, toY: y });
-        tile.x = x;
-        tile.y = y;
-        continue;
-      }
+    for (let y = rows - 2; y >= 0; y -= 1) {
+      for (let x = 0; x < columns; x += 1) {
+        const tile = board[y]?.[x] ?? null;
+        if (!tile) {
+          continue;
+        }
 
-      if (isReachableFromTop(board, x, y, canOccupy)) {
-        const tile = createTile(state, x, y, randomKind(tileKinds));
-        board[y][x] = tile;
-        spawned.push({ tile, fromRow: -1, toRow: y });
+        const nextPosition = findNextTilePosition(board, x, y, canOccupy, isBlocked, isHole);
+        if (!nextPosition || (nextPosition.x === x && nextPosition.y === y)) {
+          continue;
+        }
+
+        board[y][x] = null;
+        board[nextPosition.y][nextPosition.x] = tile;
+
+        const existingSpawn = spawnedById.get(tile.id);
+        if (existingSpawn) {
+          existingSpawn.toRow = nextPosition.y;
+        } else {
+          const existingMove = droppedById.get(tile.id);
+          if (existingMove) {
+            existingMove.toX = nextPosition.x;
+            existingMove.toY = nextPosition.y;
+          } else {
+            droppedById.set(tile.id, {
+              tile,
+              fromX: x,
+              fromY: y,
+              toX: nextPosition.x,
+              toY: nextPosition.y,
+            });
+          }
+        }
+
+        tile.x = nextPosition.x;
+        tile.y = nextPosition.y;
+        moved = true;
       }
+    }
+
+    const spawnCells = findSpawnCells(board, columns, rows, canOccupy, isBlocked, isHole);
+    for (const cell of spawnCells) {
+      const tile = createTile(state, cell.x, cell.y, randomKind(tileKinds));
+      board[cell.y][cell.x] = tile;
+      spawnedById.set(tile.id, { tile, fromRow: -1, toRow: cell.y });
+      moved = true;
     }
   }
 
-  return { dropped, spawned };
+  return { dropped: [...droppedById.values()], spawned: [...spawnedById.values()] };
 }
 
-function getPredecessorCells(board, x, y, canOccupy) {
+function findSpawnCells(board, columns, rows, canOccupy, isBlocked, isHole) {
+  const spawnCells = [];
+
+  for (let x = 0; x < columns; x += 1) {
+    for (let y = 0; y < rows; y += 1) {
+      if (isBlocked(x, y)) {
+        break;
+      }
+
+      if (isHole(x, y)) {
+        continue;
+      }
+
+      if (canOccupy(x, y) && !board[y]?.[x]) {
+        spawnCells.push({ x, y });
+      }
+
+      break;
+    }
+  }
+
+  return spawnCells;
+}
+
+function findNextTilePosition(board, x, y, canOccupy, isBlocked, isHole) {
+  const verticalY = findVerticalLandingY(board, x, y, isBlocked, isHole);
+  if (verticalY > y) {
+    return { x, y: verticalY };
+  }
+
+  const slideTarget = findDiagonalSlideTarget(board, x, y, canOccupy, isBlocked, isHole);
+  if (slideTarget) {
+    return slideTarget;
+  }
+
+  return { x, y };
+}
+
+function findVerticalLandingY(board, x, startY, isBlocked, isHole) {
+  let landingY = startY;
+
+  for (let y = startY + 1; y < board.length; y += 1) {
+    if (isBlocked(x, y)) {
+      break;
+    }
+
+    if (board[y]?.[x]) {
+      break;
+    }
+
+    if (!isHole(x, y)) {
+      landingY = y;
+    }
+  }
+
+  return landingY;
+}
+
+function findDiagonalSlideTarget(board, x, y, canOccupy, isBlocked, isHole) {
+  if (y + 1 >= board.length) {
+    return null;
+  }
+
+  const candidateXs = (x + y) % 2 === 0 ? [x - 1, x + 1] : [x + 1, x - 1];
+  for (const targetX of candidateXs) {
+    const targetY = y + 1;
+    if (!canOccupy(targetX, targetY) || board[targetY]?.[targetX]) {
+      continue;
+    }
+
+    if (canCellFillVertically(board, targetX, targetY, isBlocked, isHole)) {
+      continue;
+    }
+
+    return { x: targetX, y: targetY };
+  }
+
+  return null;
+}
+
+function canCellFillVertically(board, x, y, isBlocked, isHole) {
+  for (let scanY = y - 1; scanY >= 0; scanY -= 1) {
+    if (isBlocked(x, scanY)) {
+      return false;
+    }
+
+    if (isHole(x, scanY)) {
+      continue;
+    }
+
+    if (board[scanY]?.[x]) {
+      return true;
+    }
+  }
+
+  return true;
+}
+
+function getPredecessorCells(board, x, y, canOccupy, isBlocked, isHole) {
   if (y <= 0) {
     return [];
   }
 
+  const canTraverse = (cellX, cellY) => cellX >= 0 && cellX < board[0].length && cellY >= 0 && cellY < board.length && !isBlocked(cellX, cellY);
   const diagonalCandidates = (x + y) % 2 === 0
     ? [{ x: x - 1, y: y - 1 }, { x: x + 1, y: y - 1 }]
     : [{ x: x + 1, y: y - 1 }, { x: x - 1, y: y - 1 }];
 
-  const candidates = [{ x, y: y - 1 }];
+  const candidates = [];
+
+  if (canTraverse(x, y - 1)) {
+    candidates.push({ x, y: y - 1 });
+  }
+
+  // A hole is a vertical shaft: tiles should pass straight through it instead
+  // of treating it like a reason to start diagonal sliding.
+  if (isHole(x, y)) {
+    return candidates;
+  }
+
+  if (isVerticalPathOpenToTop(x, y, isBlocked, isHole)) {
+    return candidates;
+  }
 
   for (const cell of diagonalCandidates) {
     if (!canOccupy(cell.x, cell.y)) {
       continue;
     }
 
-    // If the source column can drop straight down into its own row, keep that
-    // vertical path and only allow diagonal slide when the column is blocked.
-    if (canOccupy(cell.x, y) && !board[y]?.[cell.x]) {
+    // Holes should behave like transparent vertical shafts, not as a reason to
+    // start diagonal sliding into a neighboring lane.
+    if (isHole(cell.x, y)) {
+      continue;
+    }
+
+    // A tile only slides diagonally after it has already fallen as far as it
+    // can in its own column. If it can keep falling straight, do not slide.
+    if (canContinueVertical(board, cell.x, y, canOccupy, isBlocked, isHole)) {
       continue;
     }
 
     candidates.push(cell);
   }
 
-  return candidates.filter((cell) => canOccupy(cell.x, cell.y));
+  return candidates;
 }
 
-function findSourceCell(board, targetX, targetY, canOccupy) {
-  const queue = getPredecessorCells(board, targetX, targetY, canOccupy).map((cell) => ({ ...cell }));
-  const visited = new Set(queue.map((cell) => `${cell.x},${cell.y}`));
+function findSourceCell(board, targetX, targetY, canOccupy, isBlocked, isHole) {
+  const verticalSource = findVerticalSourceCell(board, targetX, targetY, isBlocked, isHole);
+  if (verticalSource) {
+    return verticalSource;
+  }
 
-  while (queue.length > 0) {
-    const cell = queue.shift();
+  if (isVerticalPathOpenToTop(targetX, targetY, isBlocked, isHole)) {
+    return null;
+  }
+
+  const diagonalCandidates = getPredecessorCells(board, targetX, targetY, canOccupy, isBlocked, isHole)
+    .filter((cell) => cell.x !== targetX);
+
+  for (const cell of diagonalCandidates) {
     const tile = board[cell.y]?.[cell.x] ?? null;
     if (tile) {
       return cell;
-    }
-
-    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy)) {
-      const key = `${predecessor.x},${predecessor.y}`;
-      if (visited.has(key)) {
-        continue;
-      }
-
-      visited.add(key);
-      queue.push(predecessor);
     }
   }
 
   return null;
 }
 
-function isReachableFromTop(board, targetX, targetY, canOccupy) {
+function findVerticalSourceCell(board, x, targetY, isBlocked, isHole) {
+  for (let y = targetY - 1; y >= 0; y -= 1) {
+    if (isBlocked(x, y)) {
+      return null;
+    }
+
+    if (isHole(x, y)) {
+      continue;
+    }
+
+    if (board[y]?.[x]) {
+      return { x, y };
+    }
+  }
+
+  return null;
+}
+
+function hasVerticalSource(board, x, y, canOccupy, isBlocked, isHole) {
+  if (!canOccupy(x, y)) {
+    return false;
+  }
+
+  for (let scanY = y - 1; scanY >= 0; scanY -= 1) {
+    if (isBlocked(x, scanY)) {
+      return false;
+    }
+
+    if (isHole(x, scanY)) {
+      continue;
+    }
+
+    if (board[scanY]?.[x]) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isVerticalPathOpenToTop(x, y, isBlocked, isHole) {
+  for (let scanY = y - 1; scanY >= 0; scanY -= 1) {
+    if (isBlocked(x, scanY)) {
+      return false;
+    }
+
+    if (isHole(x, scanY)) {
+      continue;
+    }
+  }
+
+  return true;
+}
+
+function canContinueVertical(board, x, y, canOccupy, isBlocked, isHole) {
+  if (y >= board.length) {
+    return false;
+  }
+
+  if (isBlocked(x, y)) {
+    return false;
+  }
+
+  if (isHole(x, y)) {
+    return true;
+  }
+
+  return canOccupy(x, y) && !board[y]?.[x];
+}
+
+function isReachableFromTop(board, targetX, targetY, canOccupy, isBlocked, isHole) {
   if (!canOccupy(targetX, targetY)) {
     return false;
   }
@@ -311,7 +534,7 @@ function isReachableFromTop(board, targetX, targetY, canOccupy) {
       return true;
     }
 
-    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy)) {
+    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy, isBlocked, isHole)) {
       const key = `${predecessor.x},${predecessor.y}`;
       if (visited.has(key)) {
         continue;

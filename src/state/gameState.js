@@ -12,5 +12,6 @@ export function createGameState(initialLevelIndex = 0) {
     movesUsed: 0,
     holes: new Set(),
     bricks: new Map(),
+    crates: new Map(),
   };
 }

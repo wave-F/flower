@@ -11,7 +11,7 @@ import {
 import { LEVELS } from "./config/levels.js";
 import { TILE_KIND_MAP } from "./config/tileKinds.js";
 import { applyRemovalsAndCollapse, createBoard, createFixedBoard, findTileById } from "./game/board.js";
-import { applyBrickDamage, isBrickCell, isCurrentLevelComplete, getRemainingMoves, isHoleCell, prepareLevelState } from "./game/levelProgress.js";
+import { applyObstacleDamage, isBrickCell, isCrateCell, isCurrentLevelComplete, getRemainingMoves, isHoleCell, prepareLevelState } from "./game/levelProgress.js";
 import { findMatchGroups } from "./game/match.js";
 import { createGameState } from "./state/gameState.js";
 import { columnLabel } from "./utils/grid.js";
@@ -66,6 +66,8 @@ const RECYCLE_BATCH_LAUNCH_STAGGER = 300;
 const RECYCLE_FINAL_SETTLE_DURATION = 280;
 const ENABLE_TUTORIAL = false;
 const BRICK_ASSET_PATHS = ["./assets/brick.png", "./assets/brick_2.png"];
+const CRATE_ASSET_PATH = "./assets/box.png";
+const ICE_ASSET_PATH = "./assets/ice.png";
 
 export function initialize(doc = globalThis.document) {
   if (!doc) {
@@ -167,8 +169,30 @@ export function initialize(doc = globalThis.document) {
     return isBrickCell(state, x, y);
   }
 
+  function isCrate(x, y) {
+    return isCrateCell(state, x, y);
+  }
+
   function isBlocked(x, y) {
-    return isBrick(x, y);
+    return isBrick(x, y) || isCrate(x, y);
+  }
+
+  function renderObstacles(result = null) {
+    if (result?.brokenBricks?.length) {
+      tileView.playObstacleShatterEffects(result.brokenBricks, {
+        type: "brick",
+        assetPath: BRICK_ASSET_PATHS[0],
+      });
+    }
+
+    if (result?.brokenCrates?.length) {
+      tileView.playObstacleShatterEffects(result.brokenCrates, {
+        type: "crate",
+        assetPath: CRATE_ASSET_PATH,
+      });
+    }
+
+    tileView.renderBricks(state.bricks, state.crates);
   }
 
   function getCurrentLevelSettings() {
@@ -238,7 +262,7 @@ export function initialize(doc = globalThis.document) {
       rows,
     });
     renderBoardSlots({ boardElement: elements.boardElement, columns, rows, isHole });
-    tileView.refreshBrickPositions(state.bricks);
+    tileView.refreshBrickPositions(state.bricks, state.crates);
     tileView.refreshTilePositions(state.board, rows, columns);
     hudView.positionCascadeToast();
     positionTutorialGuide();
@@ -297,7 +321,7 @@ export function initialize(doc = globalThis.document) {
       });
     }
 
-    tileView.renderBricks(state.bricks);
+    renderObstacles();
 
     const entryMetrics = tileView.getBoardMetrics();
 
@@ -852,7 +876,7 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -870,8 +894,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
-      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
-      onAfterRemoval: () => tileView.renderBricks(state.bricks),
+      onAfterRemoval: renderObstacles,
     });
 
     const cascadeResult = await resolveBoardMatches("本次", {
@@ -953,7 +976,7 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -975,7 +998,7 @@ export function initialize(doc = globalThis.document) {
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
       onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
-      onAfterRemoval: () => tileView.renderBricks(state.bricks),
+      onAfterRemoval: renderObstacles,
     });
 
     const cascadeResult = await resolveBoardMatches("大风车", {
@@ -1046,7 +1069,7 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -1068,7 +1091,7 @@ export function initialize(doc = globalThis.document) {
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
       onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
-      onAfterRemoval: () => tileView.renderBricks(state.bricks),
+      onAfterRemoval: renderObstacles,
     });
 
     const cascadeResult = await resolveBoardMatches("风车", {
@@ -1160,7 +1183,7 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds,
       specialCreationContext: { allowSpecialCreation: false },
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -1187,8 +1210,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
-      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
-      onAfterRemoval: () => tileView.renderBricks(state.bricks),
+      onAfterRemoval: renderObstacles,
     });
 
     const cascadeResult = await resolveBoardMatches("光球", {
@@ -1261,7 +1283,7 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds,
       specialCreationContext: { allowSpecialCreation: false },
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -1297,8 +1319,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
-      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
-      onAfterRemoval: () => tileView.renderBricks(state.bricks),
+      onAfterRemoval: renderObstacles,
     });
 
     const cascadeResult = await resolveBoardMatches("双光球", {
@@ -1369,7 +1390,7 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -1391,7 +1412,7 @@ export function initialize(doc = globalThis.document) {
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
       onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
-      onAfterRemoval: () => tileView.renderBricks(state.bricks),
+      onAfterRemoval: renderObstacles,
     });
 
     const cascadeResult = await resolveBoardMatches("炸弹", {
@@ -1471,7 +1492,7 @@ export function initialize(doc = globalThis.document) {
         rows,
         state,
         tileKinds,
-        applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+        applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
         isBlocked,
         isHole,
         specialCreationContext: createSpecialCreationContext(previousResult, clickedCell, allowSpecialCreation),
@@ -1493,7 +1514,7 @@ export function initialize(doc = globalThis.document) {
         getRecycleRect: getRecycleTargetRect,
         onGoalArrive: handleGoalArrive,
         onRecycleArrive: countRecycle ? handleRecycleArrive : undefined,
-        onAfterRemoval: () => tileView.renderBricks(state.bricks),
+        onAfterRemoval: renderObstacles,
       });
       goalFlights.push(resolution.goalFlights);
       recycleFlights.push(resolution.recycleFlights);
@@ -1636,7 +1657,7 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds,
       specialCreationContext: { allowSpecialCreation: false, clickedCell },
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -1669,7 +1690,7 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds,
       specialCreationContext: { allowSpecialCreation: false, clickedCell },
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -1691,7 +1712,7 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds,
       specialCreationContext: { allowSpecialCreation: false, clickedCell },
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -1720,7 +1741,7 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds,
       specialCreationContext: { allowSpecialCreation: false, clickedCell },
-      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
       isBlocked,
       isHole,
     });
@@ -1756,7 +1777,7 @@ export function initialize(doc = globalThis.document) {
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
-      onAfterRemoval: () => tileView.renderBricks(state.bricks),
+      onAfterRemoval: renderObstacles,
     });
 
     const cascadeResult = await resolveBoardMatches(contextLabel, {
