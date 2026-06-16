@@ -1,5 +1,7 @@
 import { getOrthogonalNeighbors, toCellKey } from "../utils/grid.js";
 
+const GRASS_KIND_KEY = "grass";
+
 export function findMatches(boardState, columns, rows) {
   return findMatchGroups(boardState, columns, rows).flat();
 }
@@ -11,7 +13,7 @@ export function findMatchGroups(boardState, columns, rows) {
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < columns; x += 1) {
       const tile = boardState[y]?.[x] ?? null;
-      if (!tile || tile.special) {
+      if (!tile || tile.special || tile.kind.key === GRASS_KIND_KEY) {
         continue;
       }
 
@@ -34,7 +36,7 @@ export function findMatchGroups(boardState, columns, rows) {
 
 function collectConnectedGroup(boardState, startX, startY, columns, rows, visited) {
   const startTile = boardState[startY]?.[startX] ?? null;
-  if (!startTile || startTile.special) {
+  if (!startTile || startTile.special || startTile.kind.key === GRASS_KIND_KEY) {
     return [];
   }
 
@@ -49,7 +51,7 @@ function collectConnectedGroup(boardState, startX, startY, columns, rows, visite
     }
 
     const tile = boardState[cell.y]?.[cell.x] ?? null;
-    if (!tile || tile.special || tile.kind.key !== startTile.kind.key) {
+    if (!tile || tile.special || tile.kind.key === GRASS_KIND_KEY || tile.kind.key !== startTile.kind.key) {
       continue;
     }
 
