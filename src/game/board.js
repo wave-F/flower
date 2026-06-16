@@ -233,7 +233,7 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
         continue;
       }
 
-      if (isReachableFromTop(x, y, canOccupy)) {
+      if (isReachableFromTop(board, x, y, canOccupy)) {
         const tile = createTile(state, x, y, randomKind(tileKinds));
         board[y][x] = tile;
         spawned.push({ tile, fromRow: -1, toRow: y });
@@ -244,7 +244,7 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
   return { dropped, spawned };
 }
 
-function getPredecessorCells(x, y, canOccupy) {
+function getPredecessorCells(board, x, y, canOccupy) {
   if (y <= 0) {
     return [];
   }
@@ -253,13 +253,27 @@ function getPredecessorCells(x, y, canOccupy) {
     ? [{ x: x - 1, y: y - 1 }, { x: x + 1, y: y - 1 }]
     : [{ x: x + 1, y: y - 1 }, { x: x - 1, y: y - 1 }];
 
-  const candidates = [{ x, y: y - 1 }, ...diagonalCandidates];
+  const candidates = [{ x, y: y - 1 }];
+
+  for (const cell of diagonalCandidates) {
+    if (!canOccupy(cell.x, cell.y)) {
+      continue;
+    }
+
+    // If the source column can drop straight down into its own row, keep that
+    // vertical path and only allow diagonal slide when the column is blocked.
+    if (canOccupy(cell.x, y) && !board[y]?.[cell.x]) {
+      continue;
+    }
+
+    candidates.push(cell);
+  }
 
   return candidates.filter((cell) => canOccupy(cell.x, cell.y));
 }
 
 function findSourceCell(board, targetX, targetY, canOccupy) {
-  const queue = getPredecessorCells(targetX, targetY, canOccupy).map((cell) => ({ ...cell }));
+  const queue = getPredecessorCells(board, targetX, targetY, canOccupy).map((cell) => ({ ...cell }));
   const visited = new Set(queue.map((cell) => `${cell.x},${cell.y}`));
 
   while (queue.length > 0) {
@@ -269,7 +283,7 @@ function findSourceCell(board, targetX, targetY, canOccupy) {
       return cell;
     }
 
-    for (const predecessor of getPredecessorCells(cell.x, cell.y, canOccupy)) {
+    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy)) {
       const key = `${predecessor.x},${predecessor.y}`;
       if (visited.has(key)) {
         continue;
@@ -283,7 +297,7 @@ function findSourceCell(board, targetX, targetY, canOccupy) {
   return null;
 }
 
-function isReachableFromTop(targetX, targetY, canOccupy) {
+function isReachableFromTop(board, targetX, targetY, canOccupy) {
   if (!canOccupy(targetX, targetY)) {
     return false;
   }
@@ -297,7 +311,7 @@ function isReachableFromTop(targetX, targetY, canOccupy) {
       return true;
     }
 
-    for (const predecessor of getPredecessorCells(cell.x, cell.y, canOccupy)) {
+    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy)) {
       const key = `${predecessor.x},${predecessor.y}`;
       if (visited.has(key)) {
         continue;
