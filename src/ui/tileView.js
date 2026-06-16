@@ -921,12 +921,17 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     secondaryTileId,
     {
       duration = 320,
-      turns = 1.1,
+      orbitSpeed = 1.7,
       clockwise = true,
       endScale = 0.88,
       flareDuration = 160,
       stopDuration = 0,
       collisionDuration = 160,
+      stopRadiusScale = 0.88,
+      orbitStretchScale = 0.12,
+      collisionPeakScale = 1.24,
+      collisionEndScale = 0.22,
+      collisionFadeStart = 0.8,
       onArrive,
     } = {},
   ) {
@@ -958,7 +963,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     const primaryRadius = Math.hypot(primaryStart.x - center.x, primaryStart.y - center.y);
     const secondaryRadius = Math.hypot(secondaryStart.x - center.x, secondaryStart.y - center.y);
     const rotationDirection = clockwise ? 1 : -1;
-    const totalAngle = Math.PI * 2 * turns * rotationDirection;
+    const totalAngle = Math.PI * 2 * orbitSpeed * (duration / 1000) * rotationDirection;
     const startTime = performance.now();
     let animationFrame = 0;
     let settled = false;
@@ -1068,13 +1073,16 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
         const progress = easeInCubic(rawProgress);
         const primaryCurrentRadius = lerp(lastPrimaryRadius, 0, progress);
         const secondaryCurrentRadius = lerp(lastSecondaryRadius, 0, progress);
-        const primaryScale = rawProgress < 0.66
-          ? lerp(lastPrimaryScale, 1.24, rawProgress / 0.66)
-          : lerp(1.24, 0.22, (rawProgress - 0.66) / 0.34);
-        const secondaryScale = rawProgress < 0.66
-          ? lerp(lastSecondaryScale, 1.24, rawProgress / 0.66)
-          : lerp(1.24, 0.22, (rawProgress - 0.66) / 0.34);
-        const opacity = rawProgress < 0.8 ? 1 : Math.max(0, 1 - (rawProgress - 0.8) / 0.2);
+        const peakBoundary = 0.66;
+        const endBoundary = Math.max(0.01, 1 - peakBoundary);
+        const primaryScale = rawProgress < peakBoundary
+          ? lerp(lastPrimaryScale, collisionPeakScale, rawProgress / peakBoundary)
+          : lerp(collisionPeakScale, collisionEndScale, (rawProgress - peakBoundary) / endBoundary);
+        const secondaryScale = rawProgress < peakBoundary
+          ? lerp(lastSecondaryScale, collisionPeakScale, rawProgress / peakBoundary)
+          : lerp(collisionPeakScale, collisionEndScale, (rawProgress - peakBoundary) / endBoundary);
+        const fadeWindow = Math.max(0.01, 1 - collisionFadeStart);
+        const opacity = rawProgress < collisionFadeStart ? 1 : Math.max(0, 1 - (rawProgress - collisionFadeStart) / fadeWindow);
 
         updateOrbitalState(
           primaryElement,
@@ -1110,10 +1118,10 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
       const angularProgress = rawProgress;
       const angleOffset = totalAngle * angularProgress;
       const radiusProgress = easeInOutCubic(rawProgress);
-      const primaryCurrentRadius = lerp(primaryRadius, primaryRadius * 0.88, radiusProgress);
-      const secondaryCurrentRadius = lerp(secondaryRadius, secondaryRadius * 0.88, radiusProgress);
+      const primaryCurrentRadius = lerp(primaryRadius, primaryRadius * stopRadiusScale, radiusProgress);
+      const secondaryCurrentRadius = lerp(secondaryRadius, secondaryRadius * stopRadiusScale, radiusProgress);
       const baseScale = lerp(1, endScale, progress);
-      const orbitStretch = 1 + Math.sin(progress * Math.PI) * 0.12;
+      const orbitStretch = 1 + Math.sin(progress * Math.PI) * orbitStretchScale;
       const primaryScale = baseScale * orbitStretch;
       const secondaryScale = baseScale * orbitStretch;
 
@@ -1314,7 +1322,18 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     };
   }
 
-  function playBoardShockwave({ rect, duration = 320, sizeMultiplier = 7.2, coverViewport = false, shakeStrength = 0, onPeak, onArrive } = {}) {
+  function playBoardShockwave({
+    rect,
+    duration = 320,
+    sizeMultiplier = 7.2,
+    coverViewport = false,
+    visible = true,
+    shakeStrength = 0,
+    targetRects = [],
+    onTargetReach,
+    onPeak,
+    onArrive,
+  } = {}) {
     if (!rect) {
       onPeak?.();
       onArrive?.();
@@ -1325,55 +1344,149 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
       shakeBoardShell(shakeStrength);
     }
 
-    const viewportSize = Math.hypot(window.innerWidth || 0, window.innerHeight || 0);
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const hostRect = flyLayerElement.getBoundingClientRect();
+    const localCenterX = centerX - hostRect.left;
+    const localCenterY = centerY - hostRect.top;
     const size = coverViewport
-      ? Math.max(260, viewportSize * 1.08)
+      ? Math.max(
+        260,
+        Math.max(
+          Math.hypot(localCenterX, localCenterY),
+          Math.hypot(hostRect.width - localCenterX, localCenterY),
+          Math.hypot(localCenterX, hostRect.height - localCenterY),
+          Math.hypot(hostRect.width - localCenterX, hostRect.height - localCenterY),
+        ) * 2,
+      )
       : Math.max(260, Math.min(960, Math.max(rect.width, rect.height) * sizeMultiplier));
+    const shockwaveHost = document.createElement("span");
     const shockwaveElement = document.createElement("span");
-    shockwaveElement.style.position = "fixed";
-    shockwaveElement.style.left = `${rect.left + rect.width / 2}px`;
-    shockwaveElement.style.top = `${rect.top + rect.height / 2}px`;
-    shockwaveElement.style.width = `${size}px`;
-    shockwaveElement.style.height = `${size}px`;
-    shockwaveElement.style.marginLeft = `${size * -0.5}px`;
-    shockwaveElement.style.marginTop = `${size * -0.5}px`;
-    shockwaveElement.style.borderRadius = "50%";
-    shockwaveElement.style.pointerEvents = "none";
-    shockwaveElement.style.zIndex = "71";
-    shockwaveElement.style.opacity = "0";
-    shockwaveElement.style.background = coverViewport
-      ? "radial-gradient(circle, rgba(255, 248, 228, 0.94) 0 4%, rgba(255, 214, 150, 0.54) 10%, rgba(255, 154, 82, 0.26) 24%, rgba(255, 154, 82, 0) 58%)"
-      : "radial-gradient(circle, rgba(255, 255, 255, 0.82) 0 5%, rgba(255, 244, 209, 0.3) 14%, rgba(255, 183, 116, 0.18) 32%, rgba(255, 183, 116, 0) 64%)";
-    shockwaveElement.style.boxShadow = coverViewport
-      ? "0 0 54px rgba(255, 228, 178, 0.4), 0 0 140px rgba(255, 146, 78, 0.24)"
-      : "0 0 34px rgba(255, 234, 186, 0.3), 0 0 84px rgba(255, 190, 116, 0.16)";
-    flyLayerElement.appendChild(shockwaveElement);
+    if (visible) {
+      shockwaveHost.style.position = "absolute";
+      shockwaveHost.style.inset = "0";
+      shockwaveHost.style.overflow = "hidden";
+      shockwaveHost.style.pointerEvents = "none";
+      shockwaveHost.style.zIndex = "71";
+      shockwaveElement.style.position = "absolute";
+      shockwaveElement.style.left = `${localCenterX}px`;
+      shockwaveElement.style.top = `${localCenterY}px`;
+      shockwaveElement.style.width = `${size}px`;
+      shockwaveElement.style.height = `${size}px`;
+      shockwaveElement.style.marginLeft = `${size * -0.5}px`;
+      shockwaveElement.style.marginTop = `${size * -0.5}px`;
+      shockwaveElement.style.borderRadius = "50%";
+      shockwaveElement.style.opacity = "0";
+      shockwaveElement.style.background = coverViewport
+        ? "radial-gradient(circle, rgba(255, 255, 255, 0) 52%, rgba(255, 247, 214, 0.18) 57%, rgba(255, 247, 214, 0.88) 62%, rgba(255, 214, 146, 0.86) 68%, rgba(255, 160, 88, 0.42) 78%, rgba(255, 160, 88, 0) 88%), radial-gradient(circle, rgba(255, 247, 214, 0.26) 0 14%, rgba(255, 214, 146, 0.12) 24%, rgba(255, 214, 146, 0) 40%)"
+        : "radial-gradient(circle, rgba(255, 255, 255, 0.82) 0 5%, rgba(255, 244, 209, 0.3) 14%, rgba(255, 183, 116, 0.18) 32%, rgba(255, 183, 116, 0) 64%)";
+      shockwaveElement.style.boxShadow = coverViewport
+        ? "0 0 64px rgba(255, 240, 201, 0.56), 0 0 180px rgba(255, 154, 82, 0.34), inset 0 0 46px rgba(255, 244, 210, 0.16)"
+        : "0 0 34px rgba(255, 234, 186, 0.3), 0 0 84px rgba(255, 190, 116, 0.16)";
+      if (coverViewport) {
+        shockwaveElement.style.mixBlendMode = "screen";
+        shockwaveElement.style.filter = "saturate(1.18)";
+      }
+      shockwaveHost.appendChild(shockwaveElement);
+      flyLayerElement.appendChild(shockwaveHost);
+    }
 
-    const peakDelay = Math.max(60, duration * 0.28);
+    const pendingTargets = targetRects
+      .filter((entry) => entry?.rect && entry?.id != null)
+      .map((entry) => ({
+        id: entry.id,
+        distance: Math.hypot(
+          entry.rect.left + entry.rect.width / 2 - centerX,
+          entry.rect.top + entry.rect.height / 2 - centerY,
+        ),
+      }))
+      .sort((a, b) => a.distance - b.distance);
+
+    const peakDelay = Math.max(60, duration * (coverViewport ? 0.42 : 0.28));
     const peakTimeout = setTimeout(() => {
       onPeak?.();
     }, peakDelay);
-    const animation = shockwaveElement.animate([
-      { opacity: 0, transform: "scale(0.08)" },
-      { opacity: 1, transform: "scale(0.26)", offset: 0.18 },
-      { opacity: 0.42, transform: "scale(0.74)", offset: 0.54 },
-      { opacity: 0, transform: "scale(1)" },
-    ], {
-      duration,
-      easing: "cubic-bezier(0.16, 0.84, 0.22, 1)",
-      fill: "both",
-    });
+    const sweepStart = performance.now();
+    let sweepFrame = 0;
+    const animation = visible
+      ? shockwaveElement.animate(getShockwaveKeyframes(coverViewport), {
+        duration,
+        easing: coverViewport ? "linear" : "cubic-bezier(0.16, 0.84, 0.22, 1)",
+        fill: "both",
+      })
+      : null;
 
-    animation.finished.then(() => {
+    const stepSweep = (now) => {
+      const progress = Math.min(1, Math.max(0, (now - sweepStart) / duration));
+      const currentRadius = size * getShockwaveScaleAtProgress(progress) * 0.5;
+
+      while (pendingTargets.length > 0 && currentRadius >= pendingTargets[0].distance) {
+        const reachedTarget = pendingTargets.shift();
+        onTargetReach?.(reachedTarget.id);
+      }
+
+      if (progress >= 1) {
+        pendingTargets.splice(0).forEach((target) => {
+          onTargetReach?.(target.id);
+        });
+        return;
+      }
+
+      sweepFrame = requestAnimationFrame(stepSweep);
+    };
+
+    sweepFrame = requestAnimationFrame(stepSweep);
+
+    const finalize = () => {
       clearTimeout(peakTimeout);
-      animation.cancel();
-      shockwaveElement.remove();
+      cancelAnimationFrame(sweepFrame);
+      animation?.cancel();
+      shockwaveHost.remove();
       onArrive?.();
-    }).catch(() => {
-      clearTimeout(peakTimeout);
-      shockwaveElement.remove();
-      onArrive?.();
-    });
+    };
+
+    if (!animation) {
+      setTimeout(finalize, duration + 20);
+      return;
+    }
+
+    animation.finished.then(finalize).catch(finalize);
+  }
+
+  function getShockwaveScaleAtProgress(progress) {
+    if (progress <= 0.12) {
+      return lerp(0.04, 0.16, progress / 0.12);
+    }
+
+    if (progress <= 0.36) {
+      return lerp(0.16, 0.42, (progress - 0.12) / 0.24);
+    }
+
+    if (progress <= 0.74) {
+      return lerp(0.42, 0.82, (progress - 0.36) / 0.38);
+    }
+
+    return lerp(0.82, 1, (progress - 0.74) / 0.26);
+  }
+
+  function getShockwaveKeyframes(coverViewport) {
+    if (!coverViewport) {
+      return [
+        { opacity: 0, transform: "scale(0.08)" },
+        { opacity: 1, transform: "scale(0.26)", offset: 0.18 },
+        { opacity: 0.42, transform: "scale(0.74)", offset: 0.54 },
+        { opacity: 0, transform: "scale(1)" },
+      ];
+    }
+
+    return [
+      { opacity: 0, transform: "scale(0.04)" },
+      { opacity: 0.98, transform: "scale(0.16)", offset: 0.12 },
+      { opacity: 1, transform: "scale(0.42)", offset: 0.36 },
+      { opacity: 0.94, transform: "scale(0.82)", offset: 0.74 },
+      { opacity: 0.76, transform: "scale(0.94)", offset: 0.9 },
+      { opacity: 0, transform: "scale(1)" },
+    ];
   }
 
   function shakeBoardShell(strength = 1) {

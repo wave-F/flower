@@ -1061,7 +1061,6 @@ export function initialize(doc = globalThis.document) {
     const clickedCell = { x: primaryTile.x, y: primaryTile.y };
     const tilesToRemove = collectAllBoardTiles();
 
-    showSpecialChainToast(2);
     hudView.setStatus(
       "双光球共鸣",
       `相邻光球引爆全盘，清除 ${tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,

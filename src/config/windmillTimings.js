@@ -1,17 +1,17 @@
 export const WINDMILL_TIMINGS = {
-  spinUpDuration: 200,
-  burstDuration: 220,
-  windLineDuration: 220,
-  windLineStagger: 0,
-  flowerFlyDuration: 1000,
-  targetHitPulseDuration: 90,
-  windWidthScale: 1,
-  windCurlScale: 1,
-  windSpreadScale: 1,
-  windDustCount: 4,
-  windDustSizeScale: 1,
-  windDustWobbleScale: 1,
-  fadeDuration: 80,
+  "spinUpDuration": 200,
+  "burstDuration": 520,
+  "windLineDuration": 520,
+  "windLineStagger": 0,
+  "flowerFlyDuration": 1000,
+  "targetHitPulseDuration": 280,
+  "windWidthScale": 1.8,
+  "windCurlScale": 1.8,
+  "windSpreadScale": 0.4,
+  "windDustCount": 4,
+  "windDustSizeScale": 1,
+  "windDustWobbleScale": 1,
+  "fadeDuration": 80
 };
 
 export function normalizeWindmillTimings(timings) {
