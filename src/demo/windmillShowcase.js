@@ -31,7 +31,7 @@ const DEFAULT_SETTINGS = {
     focusFadeInDuration: 180,
     focusFadeOutDuration: 170,
     flashDuration: 340,
-    shockwaveDuration: 1200,
+    shockwaveDuration: 800,
     shockwaveSizeMultiplier: 9.4,
     shockwaveShakeStrength: 1.6,
   },

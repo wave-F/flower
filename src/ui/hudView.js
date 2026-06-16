@@ -3,6 +3,12 @@ import { TILE_KIND_MAP } from "../config/tileKinds.js";
 export function createHudView({ elements, appTitle }) {
   let cascadeToastTimer = null;
 
+  function positionCascadeToast() {
+    const boardRect = elements.boardElement.getBoundingClientRect();
+    elements.cascadeToastElement.style.left = `${Math.round(boardRect.right - 8)}px`;
+    elements.cascadeToastElement.style.top = `${Math.round(boardRect.top + 8)}px`;
+  }
+
   function renderLevelHud({ level, movesUsed, goalProgress }) {
     elements.levelBadgeElement.textContent = String(level.id);
     elements.moveLabelElement.textContent = String(Math.max(level.moveLimit - movesUsed, 0));
@@ -30,8 +36,8 @@ export function createHudView({ elements, appTitle }) {
     document.title = detail ? `${title} - ${appTitle}` : appTitle;
   }
 
-  function showCascadeToast(multiplier) {
-    if (!Number.isFinite(multiplier) || multiplier < 2) {
+  function showCascadeToast(chargeBonus) {
+    if (!Number.isFinite(chargeBonus) || chargeBonus <= 0) {
       return;
     }
 
@@ -40,8 +46,9 @@ export function createHudView({ elements, appTitle }) {
       cascadeToastTimer = null;
     }
 
+    positionCascadeToast();
     elements.cascadeToastElement.hidden = false;
-    elements.cascadeToastElement.textContent = `连锁触发X${multiplier}`;
+    elements.cascadeToastElement.textContent = `连携充能 +${chargeBonus}`;
     elements.cascadeToastElement.classList.remove("is-visible");
     void elements.cascadeToastElement.offsetWidth;
     elements.cascadeToastElement.classList.add("is-visible");
@@ -122,6 +129,7 @@ export function createHudView({ elements, appTitle }) {
     hideLevelOverlay,
     setStatus,
     showCascadeToast,
+    positionCascadeToast,
     getGoalSwatchRect,
     bumpGoal,
     updateFps,

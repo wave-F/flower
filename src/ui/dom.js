@@ -16,6 +16,7 @@ export function getDomElements(doc = document) {
     flyLayerElement: requireElement(doc, "#flyLayer"),
     collectionTrayElement: requireElement(doc, "#collectionTray"),
     collectionTrayCountElement: requireElement(doc, "#collectionTrayCount"),
+    collectionTrayTipElement: requireElement(doc, "#collectionTrayTip"),
     levelBadgeElement: requireElement(doc, "#levelBadge"),
     moveLabelElement: requireElement(doc, "#moveLabel"),
     goalListElement: requireElement(doc, "#goalList"),

@@ -15,6 +15,7 @@ import { applyBrickDamage, isBrickCell, isCurrentLevelComplete, getRemainingMove
 import { findMatchGroups } from "./game/match.js";
 import { createGameState } from "./state/gameState.js";
 import { columnLabel } from "./utils/grid.js";
+import { wait } from "./utils/time.js";
 import { animateBoardEntry, animateResolution, animateWindmillFusion } from "./ui/animations.js";
 import { fitBoardToViewport, renderBoardSlots } from "./ui/boardLayout.js";
 import { getDomElements } from "./ui/dom.js";
@@ -50,16 +51,19 @@ const HIVE_TYPE = "hive";
 const HIVE_KIND = { key: "hive", label: "Lightball", name: "光球" };
 const FIRST_SCREEN_STATIC_ASSET_PATHS = ["./assets/HandPointer.png"];
 const GRASS_KIND_KEY = "grass";
-const RECYCLE_HIVE_THRESHOLD = 10;
+const RECYCLE_HIVE_THRESHOLD = 15;
+const COLLECTION_TRAY_TIP = "触发特殊道具，充能获得彩虹花！";
 const SPECIAL_CHARGE_VALUES = {
-  [WINDMILL_TYPE]: 1,
-  [MERGED_WINDMILL_TYPE]: 1,
-  [BOMB_TYPE]: 2,
+  [WINDMILL_TYPE]: 2,
+  [MERGED_WINDMILL_TYPE]: 2,
+  [BOMB_TYPE]: 5,
   [HIVE_TYPE]: 0,
 };
 const HIVE_REPLACE_DURATION = 150;
 const HIVE_GROW_DURATION = 220;
-const HIVE_REWARD_FLIGHT_DURATION = 420;
+const HIVE_REWARD_FLIGHT_DURATION = 720;
+const RECYCLE_BATCH_REFILL_DELAY = 96;
+const RECYCLE_FINAL_SETTLE_DURATION = 280;
 const ENABLE_TUTORIAL = false;
 const BRICK_ASSET_PATHS = ["./assets/brick.png", "./assets/brick_2.png"];
 
@@ -83,6 +87,9 @@ export function initialize(doc = globalThis.document) {
     getInteractionDisabled: () => state.isProcessing || state.isLevelCompleted || state.isLevelFailed,
   });
   let isTutorialVisible = false;
+  let collectionTrayTipTimer = null;
+  let recycleChargeAnimationFrame = 0;
+  let recycleChargeAnimationToken = 0;
 
   const { columns: initialCols, rows: initialRows } = getCurrentLevelSettings();
   fitBoardToViewport({
@@ -98,6 +105,8 @@ export function initialize(doc = globalThis.document) {
   initializeDebugLevelPicker();
 
   elements.boardShellElement.addEventListener("click", onBoardClick);
+  elements.collectionTrayElement.addEventListener("click", onCollectionTrayClick);
+  elements.collectionTrayElement.addEventListener("keydown", onCollectionTrayKeyDown);
   elements.nextLevelButtonElement.addEventListener("click", onNextLevelButtonClick);
   elements.debugWindmillButtonElement.addEventListener("click", onDebugWindmillButtonClick);
   elements.debugBombButtonElement.addEventListener("click", onDebugBombButtonClick);
@@ -228,6 +237,7 @@ export function initialize(doc = globalThis.document) {
     renderBoardSlots({ boardElement: elements.boardElement, columns, rows, isHole });
     tileView.refreshBrickPositions(state.bricks);
     tileView.refreshTilePositions(state.board, rows, columns);
+    hudView.positionCascadeToast();
     positionTutorialGuide();
   }
 
@@ -431,9 +441,25 @@ export function initialize(doc = globalThis.document) {
     return tile;
   }
 
-  function renderCollectionTray() {
-    const displayedCharge = Math.max(0, Math.min(RECYCLE_HIVE_THRESHOLD, state.recycleCharge + state.recycleChargePreview));
-    const chargePercent = displayedCharge / RECYCLE_HIVE_THRESHOLD;
+  function stopRecycleChargeAnimation() {
+    recycleChargeAnimationToken += 1;
+    if (recycleChargeAnimationFrame) {
+      cancelAnimationFrame(recycleChargeAnimationFrame);
+      recycleChargeAnimationFrame = 0;
+    }
+  }
+
+  function renderCollectionTray({ meterCharge = null, labelCharge = null, preserveAnimation = false } = {}) {
+    if (!preserveAnimation) {
+      stopRecycleChargeAnimation();
+    }
+
+    const fallbackCharge = Math.max(0, Math.min(RECYCLE_HIVE_THRESHOLD, state.recycleCharge + state.recycleChargePreview));
+    const displayedMeterCharge = Math.max(0, Math.min(RECYCLE_HIVE_THRESHOLD, meterCharge ?? fallbackCharge));
+    const displayedLabelCharge = Math.max(0, Math.min(RECYCLE_HIVE_THRESHOLD, labelCharge ?? displayedMeterCharge));
+    const chargePercent = displayedMeterCharge / RECYCLE_HIVE_THRESHOLD;
+    const isFullCharge = displayedMeterCharge >= RECYCLE_HIVE_THRESHOLD - 0.001;
+    const roundedLabelCharge = Math.round(displayedLabelCharge);
 
     let meterElement = elements.collectionTrayElement.querySelector(".energy-meter");
     let coreElement = meterElement?.querySelector(".energy-meter-core") ?? null;
@@ -458,8 +484,88 @@ export function initialize(doc = globalThis.document) {
     }
 
     meterElement.style.setProperty("--charge-progress", String(chargePercent));
-    elements.collectionTrayElement.setAttribute("aria-label", `当前光球能量 ${displayedCharge} / ${RECYCLE_HIVE_THRESHOLD}`);
-    elements.collectionTrayCountElement.textContent = `${displayedCharge} / ${RECYCLE_HIVE_THRESHOLD}`;
+    meterElement.classList.toggle("is-full", isFullCharge);
+    elements.collectionTrayElement.setAttribute("aria-label", `当前光球能量 ${roundedLabelCharge} / ${RECYCLE_HIVE_THRESHOLD}`);
+    elements.collectionTrayCountElement.textContent = `${roundedLabelCharge} / ${RECYCLE_HIVE_THRESHOLD}`;
+  }
+
+  async function animateRecycleChargeSettle(fromCharge, toCharge, duration = RECYCLE_FINAL_SETTLE_DURATION) {
+    stopRecycleChargeAnimation();
+
+    const normalizedFromCharge = Math.max(0, Math.min(RECYCLE_HIVE_THRESHOLD, fromCharge));
+    const normalizedToCharge = Math.max(0, Math.min(RECYCLE_HIVE_THRESHOLD, toCharge));
+    if (Math.abs(normalizedFromCharge - normalizedToCharge) < 0.001) {
+      renderCollectionTray();
+      return;
+    }
+
+    const animationToken = recycleChargeAnimationToken + 1;
+    recycleChargeAnimationToken = animationToken;
+
+    await new Promise((resolve) => {
+      const startTime = performance.now();
+      const tick = (now) => {
+        if (animationToken !== recycleChargeAnimationToken) {
+          resolve();
+          return;
+        }
+
+        const progress = Math.min(1, (now - startTime) / duration);
+        const easedProgress = 1 - Math.pow(1 - progress, 3);
+        const currentCharge = normalizedFromCharge + (normalizedToCharge - normalizedFromCharge) * easedProgress;
+        renderCollectionTray({
+          meterCharge: currentCharge,
+          labelCharge: currentCharge,
+          preserveAnimation: true,
+        });
+
+        if (progress >= 1) {
+          recycleChargeAnimationFrame = 0;
+          resolve();
+          return;
+        }
+
+        recycleChargeAnimationFrame = requestAnimationFrame(tick);
+      };
+
+      recycleChargeAnimationFrame = requestAnimationFrame(tick);
+    });
+
+    if (animationToken === recycleChargeAnimationToken) {
+      renderCollectionTray();
+    }
+  }
+
+  function onCollectionTrayClick() {
+    showCollectionTrayTip();
+  }
+
+  function onCollectionTrayKeyDown(event) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    showCollectionTrayTip();
+  }
+
+  function showCollectionTrayTip() {
+    if (collectionTrayTipTimer) {
+      clearTimeout(collectionTrayTipTimer);
+      collectionTrayTipTimer = null;
+    }
+
+    elements.collectionTrayTipElement.textContent = COLLECTION_TRAY_TIP;
+    elements.collectionTrayTipElement.hidden = false;
+    elements.collectionTrayTipElement.classList.remove("is-visible");
+    void elements.collectionTrayTipElement.offsetWidth;
+    elements.collectionTrayTipElement.classList.add("is-visible");
+
+    collectionTrayTipTimer = window.setTimeout(() => {
+      elements.collectionTrayTipElement.classList.remove("is-visible");
+      elements.collectionTrayTipElement.hidden = true;
+      collectionTrayTipTimer = null;
+    }, 2200);
   }
 
   async function resolveRecycleProgress(chargeGain) {
@@ -469,22 +575,48 @@ export function initialize(doc = globalThis.document) {
       return { chargeGain: 0, hiveCount: 0 };
     }
 
-    state.recycleCharge += chargeGain;
     state.recycleChargePreview = 0;
+    const totalCharge = state.recycleCharge + chargeGain;
+    let remainingCharge = totalCharge;
+    const spawnAttempts = Math.floor(totalCharge / RECYCLE_HIVE_THRESHOLD);
     let hiveCount = 0;
+    let isBlockedAtThreshold = false;
 
-    while (state.recycleCharge >= RECYCLE_HIVE_THRESHOLD) {
+    state.recycleCharge = Math.min(totalCharge, RECYCLE_HIVE_THRESHOLD);
+    renderCollectionTray();
+
+    for (let spawnIndex = 0; spawnIndex < spawnAttempts; spawnIndex += 1) {
+      state.recycleCharge = RECYCLE_HIVE_THRESHOLD;
+      renderCollectionTray();
       const spawnedHive = await spawnRecycleHive();
       if (!spawnedHive) {
         state.recycleCharge = RECYCLE_HIVE_THRESHOLD;
+        renderCollectionTray();
+        isBlockedAtThreshold = true;
         break;
       }
 
-      state.recycleCharge -= RECYCLE_HIVE_THRESHOLD;
+      remainingCharge -= RECYCLE_HIVE_THRESHOLD;
       hiveCount += 1;
+
+      if (remainingCharge <= 0) {
+        break;
+      }
+
+      if (spawnIndex < spawnAttempts - 1) {
+        await wait(RECYCLE_BATCH_REFILL_DELAY);
+      }
     }
 
-    renderCollectionTray();
+    const finalCharge = isBlockedAtThreshold ? RECYCLE_HIVE_THRESHOLD : remainingCharge;
+    state.recycleCharge = finalCharge;
+
+    if (!isBlockedAtThreshold && spawnAttempts > 0) {
+      await animateRecycleChargeSettle(RECYCLE_HIVE_THRESHOLD, finalCharge);
+    } else {
+      renderCollectionTray();
+    }
+
     return { chargeGain, hiveCount };
   }
 
@@ -546,34 +678,49 @@ export function initialize(doc = globalThis.document) {
     return parts.length > 0 ? `，${parts.join("，")}` : "";
   }
 
-  function getSpecialChainMultiplier(triggeredSpecialCount) {
-    return Math.max(1, triggeredSpecialCount || 0);
+  function getSpecialChainBonus(triggeredSpecialCount) {
+    const normalizedCount = Math.max(0, triggeredSpecialCount || 0);
+    return normalizedCount >= 2 ? normalizedCount : 0;
   }
 
   function getSpecialChargeValue(type) {
     return SPECIAL_CHARGE_VALUES[type] ?? 0;
   }
 
-  function createSpecialChargeCounter(multiplier = 1) {
-    return (type) => getSpecialChargeValue(type) * multiplier;
+  function createSpecialChargeCounter({ chainBonus = 0, bonusOriginTileId = null } = {}) {
+    return (effectOrType) => {
+      const effect = typeof effectOrType === "string" ? null : effectOrType;
+      const type = effect?.type ?? effectOrType;
+      const baseCharge = getSpecialChargeValue(type);
+      if (baseCharge <= 0) {
+        return 0;
+      }
+
+      const bonusCharge = effect?.originTileId != null && effect.originTileId === bonusOriginTileId
+        ? Math.max(0, chainBonus)
+        : 0;
+      return baseCharge + bonusCharge;
+    };
   }
 
-  function calculateSpecialChargeGain({ windmillEffects = [], hiveEffects = [], bombEffects = [] } = {}, multiplier = 1) {
+  function calculateSpecialChargeGain({ windmillEffects = [], hiveEffects = [], bombEffects = [] } = {}, chainBonus = 0) {
     const baseCharge = [...windmillEffects, ...hiveEffects, ...bombEffects].reduce(
       (sum, effect) => sum + getSpecialChargeValue(effect.type),
       0,
     );
 
-    if (baseCharge <= 0) {
+    const normalizedChainBonus = Math.max(0, chainBonus);
+    if (baseCharge <= 0 && normalizedChainBonus <= 0) {
       return 0;
     }
 
-    return baseCharge * Math.max(1, multiplier);
+    return baseCharge + normalizedChainBonus;
   }
 
   function showSpecialChainToast(triggeredSpecialCount) {
-    if (triggeredSpecialCount >= 2) {
-      hudView.showCascadeToast(getSpecialChainMultiplier(triggeredSpecialCount));
+    const chainBonus = getSpecialChainBonus(triggeredSpecialCount);
+    if (triggeredSpecialCount >= 2 && chainBonus > 0) {
+      hudView.showCascadeToast(chainBonus);
     }
   }
 
@@ -750,8 +897,7 @@ export function initialize(doc = globalThis.document) {
       suppressedSpecialIds: new Set([secondaryTile.id]),
       mergedSourceTileIds: new Set([secondaryTile.id]),
     });
-    const specialChainMultiplier = getSpecialChainMultiplier(specialChain.triggeredSpecialCount);
-    showSpecialChainToast(specialChain.triggeredSpecialCount);
+    const specialChainBonus = getSpecialChainBonus(specialChain.triggeredSpecialCount);
     hudView.setStatus(
       "大风车合成",
       `消耗 1 步，合成清除 3 行 3 列共 ${specialChain.tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
@@ -780,11 +926,12 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: createSpecialChargeCounter(specialChainMultiplier),
+      getSpecialChargeCount: createSpecialChargeCounter({ chainBonus: specialChainBonus, bonusOriginTileId: primaryTile.id }),
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
       onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
@@ -800,7 +947,7 @@ export function initialize(doc = globalThis.document) {
       ...cascadeResult.recycleFlights,
     ]);
 
-    const initialChargeGain = calculateSpecialChargeGain(specialChain, specialChainMultiplier);
+    const initialChargeGain = calculateSpecialChargeGain(specialChain, specialChainBonus);
     const recycleResult = await resolveRecycleProgress(initialChargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
@@ -843,8 +990,7 @@ export function initialize(doc = globalThis.document) {
     const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: tile.x, y: tile.y };
     const specialChain = collectSpecialChain(tile, columns, rows);
-    const specialChainMultiplier = getSpecialChainMultiplier(specialChain.triggeredSpecialCount);
-    showSpecialChainToast(specialChain.triggeredSpecialCount);
+    const specialChainBonus = getSpecialChainBonus(specialChain.triggeredSpecialCount);
     hudView.setStatus(
       "风车触发",
       `连锁触发 ${specialChain.triggeredSpecialCount} 个道具，影响 ${specialChain.tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
@@ -873,11 +1019,12 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: createSpecialChargeCounter(specialChainMultiplier),
+      getSpecialChargeCount: createSpecialChargeCounter({ chainBonus: specialChainBonus, bonusOriginTileId: tile.id }),
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
       onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
@@ -893,7 +1040,7 @@ export function initialize(doc = globalThis.document) {
       ...cascadeResult.recycleFlights,
     ]);
 
-    const initialChargeGain = calculateSpecialChargeGain(specialChain, specialChainMultiplier);
+    const initialChargeGain = calculateSpecialChargeGain(specialChain, specialChainBonus);
     const recycleResult = await resolveRecycleProgress(initialChargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
@@ -997,6 +1144,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
       onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
@@ -1164,8 +1312,7 @@ export function initialize(doc = globalThis.document) {
     const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: tile.x, y: tile.y };
     const specialChain = collectSpecialChain(tile, columns, rows);
-    const specialChainMultiplier = getSpecialChainMultiplier(specialChain.triggeredSpecialCount);
-    showSpecialChainToast(specialChain.triggeredSpecialCount);
+    const specialChainBonus = getSpecialChainBonus(specialChain.triggeredSpecialCount);
     hudView.setStatus(
       "炸弹触发",
       `连锁触发 ${specialChain.triggeredSpecialCount} 个道具，影响 ${specialChain.tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
@@ -1194,7 +1341,7 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: createSpecialChargeCounter(specialChainMultiplier),
+      getSpecialChargeCount: createSpecialChargeCounter({ chainBonus: specialChainBonus, bonusOriginTileId: tile.id }),
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
@@ -1214,7 +1361,7 @@ export function initialize(doc = globalThis.document) {
       ...cascadeResult.recycleFlights,
     ]);
 
-    const initialChargeGain = calculateSpecialChargeGain(specialChain, specialChainMultiplier);
+    const initialChargeGain = calculateSpecialChargeGain(specialChain, specialChainBonus);
     const recycleResult = await resolveRecycleProgress(initialChargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
@@ -1876,7 +2023,7 @@ export function initialize(doc = globalThis.document) {
       triggeredSpecialIds.add(currentTile.id);
       tilesById.set(currentTile.id, currentTile);
 
-      const targets = getSpecialTargets(currentTile, columns, rows);
+      const targets = getSpecialTargets(currentTile, columns, rows).filter((target) => !isHiveTile(target));
       for (const target of targets) {
         tilesById.set(target.id, target);
         if (!target.special) {

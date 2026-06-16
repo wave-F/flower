@@ -136,7 +136,7 @@ function normalizeLightballPayload(payload) {
     focusFadeOutDuration: normalizeDuration(payload.focusFadeOutDuration, 170),
     flareDuration: 220,
     flashDuration: normalizeDuration(payload.flashDuration, 340),
-    shockwaveDuration: normalizeDuration(payload.shockwaveDuration, 1200),
+    shockwaveDuration: normalizeDuration(payload.shockwaveDuration, 800),
     shockwaveSizeMultiplier: normalizeScale(payload.shockwaveSizeMultiplier, 9.4, 1, 20),
     shockwaveShakeStrength: normalizeScale(payload.shockwaveShakeStrength, 1.6, 0, 5),
     popDuration: 180,

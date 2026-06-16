@@ -50,6 +50,7 @@ export async function animateResolution({
   getRecycleRect,
   onGoalArrive,
   onRecycleArrive,
+  onSpecialEffectsComplete,
   onAfterRemoval,
 }) {
   const removedTileGroups = result.removedTileGroups?.length ? result.removedTileGroups : [result.removedTiles];
@@ -167,6 +168,7 @@ export async function animateResolution({
         .filter((effect) => effect.triggeredByTileId == null)
         .map((effect) => launchSpecialEffect(effect)),
     );
+    await Promise.resolve(onSpecialEffectsComplete?.());
 
     // 双风车合成会吞掉一个已移除的特殊块，它不再作为后续特效 origin，
     // 这里要主动清掉残留 DOM，避免后续下落时画面看起来卡住不更新。
@@ -177,8 +179,8 @@ export async function animateResolution({
       });
 
     await Promise.resolve(onAfterRemoval?.(result));
-    animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView);
-    await wait(fallDuration);
+    const actualDropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView);
+    await wait(Math.max(fallDuration, actualDropDuration));
 
     return {
       goalFlights: Promise.all(goalFlights),
@@ -223,8 +225,8 @@ export async function animateResolution({
 
   // 下落与花朵飞散/飞行并行，不被飞行时长阻塞
   await Promise.resolve(onAfterRemoval?.(result));
-  animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView);
-  await wait(fallDuration);
+  const actualDropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView);
+  await wait(Math.max(fallDuration, actualDropDuration));
 
   return {
     goalFlights: Promise.all(goalFlights),
@@ -288,7 +290,6 @@ async function animateWindmillEffect({
         started = true;
         Promise.resolve(animateWindmillTargetHit({
           targetId,
-          originRect,
           removedTileById,
           effectByOriginId,
           launchSpecialEffect,
@@ -334,7 +335,7 @@ async function animateWindmillEffect({
   queueSpecialChargeParticles({
     tileView,
     originRect,
-    chargeCount: getSpecialChargeCount?.(effect.type) ?? 0,
+    chargeCount: getSpecialChargeCount?.(effect) ?? 0,
     recycleFlights,
     getRecycleRect,
     onRecycleArrive,
@@ -476,7 +477,7 @@ async function animateBombEffect({
   queueSpecialChargeParticles({
     tileView,
     originRect,
-    chargeCount: getSpecialChargeCount?.(effect.type) ?? 0,
+    chargeCount: getSpecialChargeCount?.(effect) ?? 0,
     recycleFlights,
     getRecycleRect,
     onRecycleArrive,
@@ -700,7 +701,6 @@ async function animateDualHiveEffect({
 
 async function animateWindmillTargetHit({
   targetId,
-  originRect,
   removedTileById,
   effectByOriginId,
   launchSpecialEffect,
@@ -715,8 +715,6 @@ async function animateWindmillTargetHit({
   getGoalRect,
   onGoalArrive,
 }) {
-  await playWindmillTargetHit(tileView, originRect, targetId, windmillTimings.targetHitPulseDuration);
-
   const childEffect = effectByOriginId.get(targetId);
   if (childEffect) {
     await launchSpecialEffect(childEffect, ancestorEffectIds);
@@ -730,7 +728,7 @@ async function animateWindmillTargetHit({
 
   animatedTileIds.add(tile.id);
 
-  // 风线命中后再进入既有结算，让玩家先看清楚是谁被吹掉。
+  // 风线命中后直接切入已有移除表现，不再额外播放受击抖动。
   if (isGoalTile?.(tile)) {
     goalFlights.push(new Promise((resolve) => {
       tileView.flyTile(tile.id, {
@@ -751,27 +749,6 @@ async function animateWindmillTargetHit({
       onArrive: resolve,
     });
   }));
-}
-
-function playWindmillTargetHit(tileView, originRect, tileId, duration) {
-  if (!tileId || duration <= 0) {
-    return Promise.resolve();
-  }
-
-  const targetRect = tileView.getTileRect(tileId);
-  const originCenterX = originRect ? originRect.left + originRect.width / 2 : targetRect?.left ?? 0;
-  const originCenterY = originRect ? originRect.top + originRect.height / 2 : targetRect?.top ?? 0;
-  const targetCenterX = targetRect ? targetRect.left + targetRect.width / 2 : originCenterX;
-  const targetCenterY = targetRect ? targetRect.top + targetRect.height / 2 : originCenterY;
-
-  return new Promise((resolve) => {
-    tileView.gustHitTile(tileId, {
-      duration,
-      directionX: targetCenterX - originCenterX,
-      directionY: targetCenterY - originCenterY,
-      onArrive: resolve,
-    });
-  });
 }
 
 function getWindmillCastDuration(timings) {
@@ -855,10 +832,13 @@ function sortByCenterFirst(items, columns, rows) {
 function animateDrops(dropped, spawned, createdSpecialTiles, tileView) {
   const metrics = tileView.getBoardMetrics();
   const getDropDuration = (distance) => Math.max(220, Math.min(720, 180 + distance * 95));
+  let maxDropDuration = 0;
 
   for (const created of createdSpecialTiles) {
+    const duration = getDropDuration(Math.abs(created.tile.y - created.fromRow));
     const element = tileView.mountSpawnedTile(created.tile, created.fromRow, metrics);
-    tileView.setDropDuration(element, getDropDuration(Math.abs(created.tile.y - created.fromRow)));
+    tileView.setDropDuration(element, duration);
+    maxDropDuration = Math.max(maxDropDuration, duration);
     tileView.setTileBoardPosition(element, created.tile.x, created.tile.y, metrics);
     requestAnimationFrame(() => {
       element.classList.remove("is-spawning");
@@ -869,17 +849,23 @@ function animateDrops(dropped, spawned, createdSpecialTiles, tileView) {
     const element = tileView.getTileElement(move.tile.id);
     if (element) {
       const distance = Math.max(Math.abs((move.toX ?? move.tile.x) - (move.fromX ?? move.tile.x)), Math.abs(move.toY - move.fromY));
-      tileView.setDropDuration(element, getDropDuration(distance));
+      const duration = getDropDuration(distance);
+      tileView.setDropDuration(element, duration);
+      maxDropDuration = Math.max(maxDropDuration, duration);
       tileView.setTileBoardPosition(element, move.tile.x, move.toY, metrics);
     }
   }
 
   for (const spawn of spawned) {
+    const duration = getDropDuration(Math.abs(spawn.toRow - spawn.fromRow));
     const element = tileView.mountSpawnedTile(spawn.tile, spawn.fromRow, metrics);
-    tileView.setDropDuration(element, getDropDuration(Math.abs(spawn.toRow - spawn.fromRow)));
+    tileView.setDropDuration(element, duration);
+    maxDropDuration = Math.max(maxDropDuration, duration);
     tileView.setTileBoardPosition(element, spawn.tile.x, spawn.toRow, metrics);
     requestAnimationFrame(() => {
       element.classList.remove("is-spawning");
     });
   }
+
+  return maxDropDuration;
 }

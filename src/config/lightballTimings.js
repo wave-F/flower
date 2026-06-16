@@ -1,5 +1,5 @@
 export const DUAL_LIGHTBALL_TIMINGS = {
-  "orbitDuration": 1500,
+  "orbitDuration": 670,
   "orbitSpeed": 2.54,
   "orbitEndScale": 0.98,
   "stopDuration": 90,
@@ -14,7 +14,7 @@ export const DUAL_LIGHTBALL_TIMINGS = {
   "focusFadeOutDuration": 170,
   "flareDuration": 220,
   "flashDuration": 340,
-  "shockwaveDuration": 1200,
+  "shockwaveDuration": 500,
   "shockwaveSizeMultiplier": 9.4,
   "shockwaveShakeStrength": 1.6,
   "popDuration": 180,
