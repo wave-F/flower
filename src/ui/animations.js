@@ -12,8 +12,8 @@ const BOMB_PRIME_DURATION = 300;
 const BOMB_BLAST_RADIUS_CELLS = 2;
 const BOMB_POP_DURATION = 220;
 const BOMB_SHOCKWAVE_DURATION = 260;
-const SPECIAL_CHARGE_PARTICLE_DURATION = 560;
-const SPECIAL_CHARGE_PARTICLE_STAGGER = 70;
+const SPECIAL_CHARGE_PARTICLE_DURATION = 760;
+const SPECIAL_CHARGE_PARTICLE_STAGGER = 42;
 const MERGED_WINDMILL_TYPE = "mergedWindmill";
 const WINDMILL_FUSION_RETREAT_DURATION = 140;
 const WINDMILL_FUSION_SLAM_DURATION = 220;
@@ -784,6 +784,11 @@ function queueSpecialChargeParticles({
           fromRect: originRect,
           targetRect,
           duration: SPECIAL_CHARGE_PARTICLE_DURATION,
+          spawnDuration: 0,
+          holdDuration: 0,
+          arcMultiplier: 0.84 + Math.min(0.12, index * 0.03),
+          liftMultiplier: 0.82 + Math.min(0.08, index * 0.02),
+          curveSide: index % 2 === 0 ? -1 : 1,
           onArrive: () => {
             onRecycleArrive?.();
             resolve();

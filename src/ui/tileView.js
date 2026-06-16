@@ -852,6 +852,8 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     targetRect = null,
     duration,
     delay = 0,
+    spawnDuration = 120,
+    holdDuration = 36,
     spawnOffsetX = 0,
     spawnOffsetY = 0,
     targetOffsetX = 0,
@@ -868,9 +870,11 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
 
     const sourceSize = Math.min(fromRect.width, fromRect.height);
     const size = Math.max(7, Math.min(11, sourceSize * 0.16));
+    const originLeft = fromRect.left + fromRect.width / 2 - size / 2;
+    const originTop = fromRect.top + fromRect.height / 2 - size / 2;
     const startRect = {
-      left: fromRect.left + fromRect.width / 2 + spawnOffsetX - size / 2,
-      top: fromRect.top + fromRect.height / 2 + spawnOffsetY - size / 2,
+      left: originLeft + spawnOffsetX,
+      top: originTop + spawnOffsetY,
       width: size,
       height: size,
     };
@@ -878,32 +882,65 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     particleElement.className = "lightball-particle";
     particleElement.style.width = `${size}px`;
     particleElement.style.height = `${size}px`;
-    particleElement.style.left = `${startRect.left}px`;
-    particleElement.style.top = `${startRect.top}px`;
+    particleElement.style.left = `${originLeft}px`;
+    particleElement.style.top = `${originTop}px`;
     particleElement.style.setProperty("--particle-size", `${Math.round(size)}px`);
     particleElement.style.setProperty("--trail-length", `${Math.round(size * 4.8)}px`);
     flyLayerElement.appendChild(particleElement);
 
-    flyTileByBezier(particleElement, startRect, {
-      duration,
-      delay,
-      endCenterX: targetRect.left + targetRect.width / 2 + targetOffsetX,
-      endCenterY: targetRect.top + targetRect.height / 2 + targetOffsetY,
-      startScale: 0.82,
-      endScale: 0.26,
-      startOpacity: 0.96,
-      fadeIn: false,
-      fadeOut: false,
-      rotate: false,
-      alignToPath: true,
-      arcMultiplier,
-      liftMultiplier,
-      curveSide,
-      bloomStrength: 0.028,
-      endOpacity: 0.74,
-      onFinish: () => particleElement.remove(),
-      onArrive,
-    });
+    const launchFlight = () => {
+      flyTileByBezier(particleElement, startRect, {
+        duration,
+        delay,
+        endCenterX: targetRect.left + targetRect.width / 2 + targetOffsetX,
+        endCenterY: targetRect.top + targetRect.height / 2 + targetOffsetY,
+        startScale: 0.82,
+        endScale: 0.26,
+        startOpacity: 0.96,
+        fadeIn: false,
+        fadeOut: false,
+        rotate: false,
+        alignToPath: true,
+        arcMultiplier,
+        liftMultiplier,
+        curveSide,
+        bloomStrength: 0.028,
+        endOpacity: 0.74,
+        onFinish: () => particleElement.remove(),
+        onArrive,
+      });
+    };
+
+    if (spawnDuration > 0) {
+      particleElement.style.opacity = "0";
+      particleElement.style.transform = "translate(0, 0) scale(0.12)";
+      const offsetX = startRect.left - originLeft;
+      const offsetY = startRect.top - originTop;
+      const spawnAnimation = particleElement.animate([
+        { opacity: 0, transform: "translate(0, 0) scale(0.12)" },
+        { opacity: 0.76, transform: `translate(${offsetX * 0.42}px, ${offsetY * 0.42}px) scale(0.78)`, offset: 0.38 },
+        { opacity: 0.94, transform: `translate(${offsetX * 0.82}px, ${offsetY * 0.82}px) scale(1.06)`, offset: 0.8 },
+        { opacity: 0.96, transform: `translate(${offsetX}px, ${offsetY}px) scale(0.82)` },
+      ], {
+        duration: spawnDuration,
+        easing: "cubic-bezier(0.12, 0.82, 0.22, 1)",
+        fill: "both",
+      });
+
+      spawnAnimation.finished.then(() => {
+        spawnAnimation.cancel();
+        particleElement.style.left = `${startRect.left}px`;
+        particleElement.style.top = `${startRect.top}px`;
+        particleElement.style.opacity = "0.96";
+        particleElement.style.transform = "scale(0.82)";
+        window.setTimeout(launchFlight, holdDuration);
+      }).catch(() => {
+        launchFlight();
+      });
+      return;
+    }
+
+    launchFlight();
   }
 
   function mergeTileIntoTile(

@@ -88,8 +88,11 @@ export function initialize(doc = globalThis.document) {
   });
   let isTutorialVisible = false;
   let collectionTrayTipTimer = null;
+  let collectionTrayFullBloomTimer = null;
   let recycleChargeAnimationFrame = 0;
   let recycleChargeAnimationToken = 0;
+  let wasCollectionTrayFull = false;
+  let hasCollectionTrayRendered = false;
 
   const { columns: initialCols, rows: initialRows } = getCurrentLevelSettings();
   fitBoardToViewport({
@@ -460,6 +463,7 @@ export function initialize(doc = globalThis.document) {
     const chargePercent = displayedMeterCharge / RECYCLE_HIVE_THRESHOLD;
     const isFullCharge = displayedMeterCharge >= RECYCLE_HIVE_THRESHOLD - 0.001;
     const roundedLabelCharge = Math.round(displayedLabelCharge);
+    const petalOpenProgress = Math.min(1, Math.max(0, Math.pow(chargePercent, 0.82)));
 
     let meterElement = elements.collectionTrayElement.querySelector(".energy-meter");
     let coreElement = meterElement?.querySelector(".energy-meter-core") ?? null;
@@ -473,20 +477,59 @@ export function initialize(doc = globalThis.document) {
       const ringElement = document.createElement("span");
       ringElement.className = "energy-meter-ring";
 
+      const bloomElement = document.createElement("span");
+      bloomElement.className = "energy-meter-bloom";
+
+      for (let index = 0; index < 6; index += 1) {
+        const petalElement = document.createElement("span");
+        petalElement.className = "energy-meter-petal";
+        petalElement.style.setProperty("--petal-rotate", `${index * 60}deg`);
+        petalElement.style.setProperty("--petal-delay", `${index * 28}ms`);
+        bloomElement.appendChild(petalElement);
+      }
+
       const orbGlowElement = document.createElement("span");
       orbGlowElement.className = "energy-meter-orb-glow";
 
       coreElement = document.createElement("span");
       coreElement.className = "energy-meter-core";
 
-      meterElement.append(ringElement, orbGlowElement, coreElement);
+      meterElement.append(ringElement, bloomElement, orbGlowElement, coreElement);
       elements.collectionTrayElement.appendChild(meterElement);
     }
 
     meterElement.style.setProperty("--charge-progress", String(chargePercent));
+    meterElement.style.setProperty("--petal-open-progress", String(petalOpenProgress));
     meterElement.classList.toggle("is-full", isFullCharge);
     elements.collectionTrayElement.setAttribute("aria-label", `当前光球能量 ${roundedLabelCharge} / ${RECYCLE_HIVE_THRESHOLD}`);
     elements.collectionTrayCountElement.textContent = `${roundedLabelCharge} / ${RECYCLE_HIVE_THRESHOLD}`;
+
+    if (isFullCharge && hasCollectionTrayRendered && !wasCollectionTrayFull) {
+      triggerCollectionTrayFullBloom(meterElement);
+    }
+
+    wasCollectionTrayFull = isFullCharge;
+    hasCollectionTrayRendered = true;
+  }
+
+  function triggerCollectionTrayFullBloom(meterElement) {
+    if (!meterElement) {
+      return;
+    }
+
+    if (collectionTrayFullBloomTimer) {
+      clearTimeout(collectionTrayFullBloomTimer);
+      collectionTrayFullBloomTimer = null;
+    }
+
+    meterElement.classList.remove("is-blooming");
+    void meterElement.offsetWidth;
+    meterElement.classList.add("is-blooming");
+
+    collectionTrayFullBloomTimer = window.setTimeout(() => {
+      meterElement.classList.remove("is-blooming");
+      collectionTrayFullBloomTimer = null;
+    }, 760);
   }
 
   async function animateRecycleChargeSettle(fromCharge, toCharge, duration = RECYCLE_FINAL_SETTLE_DURATION) {

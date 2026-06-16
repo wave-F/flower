@@ -858,10 +858,13 @@ body {
 .energy-meter {
   --charge-progress: 0;
   --charge-angle: calc(var(--charge-progress) * 360deg);
+  --petal-open-progress: 0;
   position: relative;
   width: 86px;
   height: 86px;
   border-radius: 50%;
+  overflow: visible;
+  isolation: isolate;
   background: radial-gradient(circle at center, rgba(138, 88, 44, 0.98), rgba(110, 66, 29, 0.98));
   box-shadow:
     inset 0 1px 0 rgba(255, 244, 210, 0.4),
@@ -871,6 +874,7 @@ body {
 .energy-meter-ring {
   position: absolute;
   inset: 0;
+  z-index: 0;
   border-radius: 50%;
   background:
     conic-gradient(
@@ -893,9 +897,61 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255, 222, 140, 0.16);
 }
 
+.energy-meter-bloom {
+  position: absolute;
+  inset: 7px;
+  z-index: 1;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.energy-meter-bloom::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 234, 169, 0.18) 0 38%, rgba(255, 196, 109, 0.18) 48%, rgba(255, 160, 112, 0) 82%);
+  opacity: calc(0.12 + var(--charge-progress) * 0.4);
+  transform: scale(calc(0.88 + var(--charge-progress) * 0.14));
+}
+
+.energy-meter-bloom::after {
+  content: "";
+  position: absolute;
+  inset: -16px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(255, 252, 235, 0.92) 0 1.5px, rgba(255, 252, 235, 0) 3px),
+    radial-gradient(circle at 82% 28%, rgba(255, 244, 207, 0.82) 0 1.8px, rgba(255, 244, 207, 0) 3.2px),
+    radial-gradient(circle at 18% 34%, rgba(255, 241, 190, 0.84) 0 1.6px, rgba(255, 241, 190, 0) 3.2px),
+    radial-gradient(circle at 72% 78%, rgba(255, 236, 183, 0.72) 0 1.5px, rgba(255, 236, 183, 0) 3.2px),
+    radial-gradient(circle at 28% 84%, rgba(255, 245, 213, 0.72) 0 1.5px, rgba(255, 245, 213, 0) 3.2px);
+  opacity: 0;
+  transform: scale(0.78);
+}
+
+.energy-meter-petal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 38px;
+  border-radius: 58% 58% 46% 46%;
+  background:
+    radial-gradient(circle at 50% 24%, rgba(255, 250, 241, 0.92) 0 16%, rgba(255, 226, 199, 0.84) 32%, rgba(255, 183, 157, 0.86) 68%, rgba(238, 135, 142, 0.88) 100%);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.42),
+    inset 0 -4px 8px rgba(196, 93, 113, 0.18),
+    0 3px 7px rgba(188, 104, 90, 0.16);
+  opacity: calc(0.56 + var(--charge-progress) * 0.36);
+  transform: translate(-50%, -50%) rotate(var(--petal-rotate)) translateY(calc(-12px - 8px * var(--petal-open-progress))) scaleX(calc(0.66 + var(--petal-open-progress) * 0.28)) scaleY(calc(1.08 - var(--petal-open-progress) * 0.16));
+  transform-origin: 50% 50%;
+}
+
 .energy-meter-orb-glow {
   position: absolute;
   inset: 20px;
+  z-index: 2;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 235, 150, 0.42) 0 30%, rgba(255, 193, 80, 0.18) 56%, rgba(255, 193, 80, 0) 78%);
   filter: blur(5px);
@@ -904,6 +960,7 @@ body {
 .energy-meter-core {
   position: absolute;
   inset: 22px;
+  z-index: 3;
   border-radius: 50%;
   background:
     radial-gradient(circle at center, rgba(255, 248, 214, 0.82) 0 44%, rgba(255, 214, 111, 0.22) 66%, rgba(255, 222, 124, 0) 82%);
@@ -934,15 +991,43 @@ body {
 .energy-meter.is-full .energy-meter-ring {
   box-shadow:
     inset 0 0 0 3px rgba(255, 244, 188, 0.56),
-    0 0 16px rgba(255, 200, 92, 0.24);
+    0 0 22px rgba(255, 200, 92, 0.32);
+}
+
+.energy-meter.is-full .energy-meter-petal {
+  animation: energy-meter-full-petal 2.8s ease-in-out infinite;
+}
+
+.energy-meter.is-full .energy-meter-bloom::before {
+  animation: energy-meter-full-halo 2.8s ease-in-out infinite;
+}
+
+.energy-meter.is-full .energy-meter-bloom::after {
+  animation: energy-meter-full-pollen 2.8s ease-in-out infinite;
 }
 
 .energy-meter.is-full .energy-meter-orb-glow {
-  animation: energy-meter-full-glow 1.2s ease-in-out infinite;
+  animation: energy-meter-full-glow 2.8s ease-in-out infinite;
 }
 
 .energy-meter.is-full .energy-meter-core {
-  animation: energy-meter-full-core 1.2s ease-in-out infinite;
+  animation: energy-meter-full-core 2.8s ease-in-out infinite;
+}
+
+.energy-meter.is-blooming .energy-meter-bloom::before {
+  animation: energy-meter-bloom-halo 620ms cubic-bezier(0.22, 0.88, 0.24, 1) both;
+}
+
+.energy-meter.is-blooming .energy-meter-bloom::after {
+  animation: energy-meter-bloom-pollen 680ms ease-out both;
+}
+
+.energy-meter.is-blooming .energy-meter-petal {
+  animation: energy-meter-bloom-petal 560ms cubic-bezier(0.18, 0.9, 0.22, 1.12) var(--petal-delay, 0ms) both;
+}
+
+.energy-meter.is-blooming .energy-meter-core {
+  animation: energy-meter-bloom-core 620ms cubic-bezier(0.18, 0.9, 0.22, 1) both;
 }
 
 .collection-tray-tip {
@@ -990,28 +1075,175 @@ body {
 @keyframes energy-meter-full-glow {
   0%,
   100% {
-    opacity: 0.72;
-    transform: scale(0.98);
+    opacity: 0.76;
+    transform: scale(1.02);
     filter: blur(5px) brightness(1);
   }
 
-  50% {
+  28% {
     opacity: 1;
+    transform: scale(1.12);
+    filter: blur(6px) brightness(1.18);
+  }
+
+  72% {
+    opacity: 0.9;
+    transform: scale(1.07);
+    filter: blur(5.6px) brightness(1.1);
+  }
+}
+
+@keyframes energy-meter-full-halo {
+  0%,
+  100% {
+    opacity: 0.48;
     transform: scale(1.04);
-    filter: blur(6px) brightness(1.12);
+    filter: brightness(1);
+  }
+
+  28% {
+    opacity: 0.9;
+    transform: scale(1.18);
+    filter: brightness(1.14);
+  }
+
+  72% {
+    opacity: 0.68;
+    transform: scale(1.12);
+    filter: brightness(1.08);
+  }
+}
+
+@keyframes energy-meter-full-pollen {
+  0%,
+  100% {
+    opacity: 0.24;
+    transform: scale(0.84) translateY(2px);
+  }
+
+  28% {
+    opacity: 0.84;
+    transform: scale(1.08) translateY(-9px);
+  }
+
+  72% {
+    opacity: 0.54;
+    transform: scale(0.96) translateY(-4px);
   }
 }
 
 @keyframes energy-meter-full-core {
   0%,
   100% {
-    transform: scale(1);
+    transform: scale(1.04);
     box-shadow:
-      inset 0 0 0 2px rgba(255, 247, 248, 0.72),
-      0 0 12px rgba(255, 225, 111, 0.4);
+      inset 0 0 0 2px rgba(255, 248, 240, 0.78),
+      0 0 16px rgba(255, 225, 111, 0.5);
   }
 
-  50% {
+  28% {
+    transform: scale(1.08);
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 251, 240, 0.9),
+      0 0 26px rgba(255, 228, 126, 0.8);
+  }
+
+  72% {
+    transform: scale(1.06);
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 250, 236, 0.84),
+      0 0 20px rgba(255, 228, 126, 0.66);
+  }
+}
+
+@keyframes energy-meter-full-petal {
+  0%,
+  100% {
+    opacity: calc(0.8 + var(--charge-progress) * 0.18);
+    transform: translate(-50%, -50%) rotate(var(--petal-rotate)) translateY(calc(-15px - 10px * var(--petal-open-progress))) scaleX(calc(0.76 + var(--petal-open-progress) * 0.32)) scaleY(calc(1.02 - var(--petal-open-progress) * 0.18));
+  }
+
+  28% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--petal-rotate)) translateY(calc(-19px - 12px * var(--petal-open-progress))) scaleX(calc(0.92 + var(--petal-open-progress) * 0.36)) scaleY(calc(0.92 - var(--petal-open-progress) * 0.14));
+  }
+
+  72% {
+    opacity: calc(0.88 + var(--charge-progress) * 0.12);
+    transform: translate(-50%, -50%) rotate(var(--petal-rotate)) translateY(calc(-17px - 11px * var(--petal-open-progress))) scaleX(calc(0.84 + var(--petal-open-progress) * 0.34)) scaleY(calc(0.96 - var(--petal-open-progress) * 0.16));
+  }
+}
+
+@keyframes energy-meter-bloom-halo {
+  0% {
+    opacity: 0.16;
+    transform: scale(0.78);
+    filter: brightness(1);
+  }
+
+  60% {
+    opacity: 0.96;
+    transform: scale(1.26);
+    filter: brightness(1.18);
+  }
+
+  100% {
+    opacity: 0.42;
+    transform: scale(1.08);
+    filter: brightness(1.04);
+  }
+}
+
+@keyframes energy-meter-bloom-pollen {
+  0% {
+    opacity: 0;
+    transform: scale(0.62) translateY(8px);
+  }
+
+  45% {
+    opacity: 0.88;
+    transform: scale(1.06) translateY(-10px);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.18) translateY(-18px);
+  }
+}
+
+@keyframes energy-meter-bloom-petal {
+  0% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) rotate(var(--petal-rotate)) translateY(calc(-8px - 2px * var(--petal-open-progress))) scaleX(0.54) scaleY(1.18);
+  }
+
+  62% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--petal-rotate)) translateY(calc(-20px - 11px * var(--petal-open-progress))) scaleX(calc(0.94 + var(--petal-open-progress) * 0.32)) scaleY(calc(0.92 - var(--petal-open-progress) * 0.08));
+  }
+
+  100% {
+    opacity: calc(0.72 + var(--charge-progress) * 0.2);
+    transform: translate(-50%, -50%) rotate(var(--petal-rotate)) translateY(calc(-12px - 8px * var(--petal-open-progress))) scaleX(calc(0.66 + var(--petal-open-progress) * 0.28)) scaleY(calc(1.08 - var(--petal-open-progress) * 0.16));
+  }
+}
+
+@keyframes energy-meter-bloom-core {
+  0% {
+    transform: scale(0.92);
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 247, 248, 0.72),
+      0 0 10px rgba(255, 225, 111, 0.36);
+  }
+
+  40% {
+    transform: scale(1.18);
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 250, 236, 0.88),
+      0 0 24px rgba(255, 233, 149, 0.82);
+  }
+
+  100% {
     transform: scale(1.03);
     box-shadow:
       inset 0 0 0 2px rgba(255, 250, 236, 0.82),
@@ -1230,6 +1462,10 @@ body {
 .tile--special-windmill::after {
   content: none;
   animation: none;
+}
+
+.tile--special-windmill::before {
+  filter: none;
 }
 
 .tile--special-mergedWindmill::before {
@@ -1603,10 +1839,11 @@ body {
   pointer-events: none;
   background: radial-gradient(circle at 35% 35%, rgba(247, 254, 255, 1) 0 18%, rgba(181, 248, 255, 0.98) 40%, rgba(73, 223, 255, 0.96) 68%, rgba(24, 154, 255, 0.92) 84%, rgba(24, 154, 255, 0) 100%);
   box-shadow:
-    0 0 10px rgba(202, 249, 255, 1),
-    0 0 22px rgba(68, 220, 255, 0.68),
-    0 0 34px rgba(30, 149, 255, 0.42);
+    0 0 12px rgba(220, 252, 255, 1),
+    0 0 28px rgba(82, 234, 255, 0.88),
+    0 0 42px rgba(34, 164, 255, 0.62);
   transform-origin: center center;
+  filter: saturate(1.18) brightness(1.14);
   will-change: transform, opacity;
 }
 
@@ -1616,12 +1853,15 @@ body {
   top: 50%;
   right: calc(100% - 1px);
   width: var(--trail-length, 24px);
-  height: max(2px, calc(var(--particle-size, 8px) * 0.34));
+  height: max(3px, calc(var(--particle-size, 8px) * 0.44));
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(38, 165, 255, 0) 0%, rgba(40, 184, 255, 0.12) 16%, rgba(56, 213, 255, 0.28) 36%, rgba(103, 240, 255, 0.62) 68%, rgba(231, 252, 255, 0.98) 100%);
   transform: translateY(-50%);
   transform-origin: right center;
-  filter: blur(1.5px);
+  box-shadow:
+    0 0 10px rgba(112, 236, 255, 0.82),
+    0 0 20px rgba(33, 164, 255, 0.44);
+  filter: blur(1.8px) saturate(1.12) brightness(1.08);
 }
 
 .lightball-particle::after {
@@ -1635,7 +1875,8 @@ body {
   background: radial-gradient(circle, rgba(250, 255, 255, 0.98) 0%, rgba(205, 249, 255, 0.88) 54%, rgba(205, 249, 255, 0) 100%);
   transform: translateY(-50%);
   margin-left: calc(var(--particle-size, 8px) * -0.18);
-  filter: blur(0.3px);
+  box-shadow: 0 0 8px rgba(224, 251, 255, 0.9);
+  filter: blur(0.34px) brightness(1.12);
 }
 
 
