@@ -1979,26 +1979,17 @@ body {
   left: 0;
   top: 0;
   z-index: 320;
-  min-width: 172px;
-  padding: 12px 18px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(255, 252, 245, 0.96), rgba(255, 229, 184, 0.96));
+  min-width: 0;
+  padding: 0;
+  background: transparent;
   color: #b4432d;
-  font-size: 24px;
-  font-weight: 1000;
   line-height: 1;
   text-align: center;
   letter-spacing: 0.02em;
   pointer-events: none;
   opacity: 0;
-  transform: translate(-100%, 0) scale(0.78);
-  box-shadow:
-    inset 0 0 0 3px rgba(255, 255, 255, 0.72),
-    inset 0 -6px 12px rgba(224, 141, 68, 0.2),
-    0 14px 28px rgba(145, 58, 29, 0.24);
-  text-shadow:
-    0 2px 0 rgba(255, 255, 255, 0.65),
-    0 4px 10px rgba(255, 180, 97, 0.28);
+  transform: translate(-100%, -2px);
+  transition: opacity 160ms ease, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .cascade-toast[hidden] {
@@ -2006,7 +1997,121 @@ body {
 }
 
 .cascade-toast.is-visible {
-  animation: cascade-toast-pop 820ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  opacity: 1;
+  transform: translate(-100%, -8px);
+}
+
+.cascade-toast.is-bumping {
+  animation: cascade-toast-bump 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.cascade-toast[data-combo-tier="amazing"].is-bumping {
+  animation: cascade-toast-bump-strong 360ms cubic-bezier(0.16, 0.88, 0.2, 1);
+}
+
+.cascade-toast[data-combo-tier="legendary"].is-bumping {
+  animation: cascade-toast-bump-legendary 420ms cubic-bezier(0.14, 0.9, 0.22, 1);
+}
+
+.cascade-toast[data-combo-tier="mythic"].is-bumping {
+  animation: cascade-toast-bump-mythic 520ms cubic-bezier(0.14, 0.92, 0.2, 1);
+}
+
+.cascade-toast-content {
+  --combo-scale: 1;
+  --combo-tilt: -4deg;
+  display: inline-block;
+  transform: rotate(var(--combo-tilt)) scale(var(--combo-scale));
+  transform-origin: right center;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  filter: drop-shadow(0 3px 0 rgba(255, 255, 255, 0.82)) drop-shadow(0 8px 14px rgba(145, 58, 29, 0.18));
+}
+
+.cascade-toast[data-combo-tier="great"] .cascade-toast-content {
+  color: #c86f17;
+  filter: drop-shadow(0 3px 0 rgba(255, 250, 232, 0.88)) drop-shadow(0 8px 14px rgba(180, 104, 18, 0.22));
+}
+
+.cascade-toast[data-combo-tier="amazing"] .cascade-toast-content {
+  color: #c24a7f;
+  filter: drop-shadow(0 3px 0 rgba(255, 248, 252, 0.9)) drop-shadow(0 10px 18px rgba(162, 60, 108, 0.26));
+}
+
+.cascade-toast[data-combo-tier="legendary"] .cascade-toast-content {
+  color: #ef5e86;
+  filter: drop-shadow(0 3px 0 rgba(255, 250, 246, 0.92)) drop-shadow(0 12px 20px rgba(238, 98, 80, 0.28));
+}
+
+.cascade-toast[data-combo-tier="mythic"] .cascade-toast-content {
+  color: #ffe49c;
+  filter: drop-shadow(0 3px 0 rgba(255, 252, 242, 0.96)) drop-shadow(0 14px 24px rgba(255, 120, 186, 0.32));
+  animation: cascade-toast-mythic-glow 960ms ease-in-out infinite alternate;
+}
+
+.cascade-toast-label,
+.cascade-toast-value {
+  display: block;
+}
+
+.cascade-toast-label {
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.cascade-toast-value {
+  margin-top: 5px;
+  font-size: 34px;
+  font-weight: 1000;
+  line-height: 0.92;
+  text-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.88),
+    0 6px 12px rgba(255, 180, 97, 0.26);
+}
+
+.cascade-toast[data-combo-tier="great"] .cascade-toast-value {
+  text-shadow:
+    0 2px 0 rgba(255, 252, 240, 0.92),
+    0 8px 16px rgba(255, 190, 88, 0.34);
+}
+
+.cascade-toast[data-combo-tier="amazing"] .cascade-toast-value {
+  text-shadow:
+    0 2px 0 rgba(255, 248, 252, 0.94),
+    0 10px 18px rgba(227, 120, 176, 0.34);
+}
+
+.cascade-toast[data-combo-tier="legendary"] .cascade-toast-label {
+  color: #ff7d68;
+  text-shadow:
+    0 1px 0 rgba(255, 250, 244, 0.96),
+    0 4px 10px rgba(255, 154, 112, 0.22);
+}
+
+.cascade-toast[data-combo-tier="legendary"] .cascade-toast-value {
+  color: #ff6c78;
+  text-shadow:
+    0 2px 0 rgba(255, 250, 244, 0.96),
+    0 10px 20px rgba(255, 135, 92, 0.34),
+    0 0 18px rgba(255, 96, 140, 0.22);
+}
+
+.cascade-toast[data-combo-tier="mythic"] .cascade-toast-label {
+  color: #ffd46e;
+  text-shadow:
+    0 1px 0 rgba(255, 252, 242, 0.98),
+    0 6px 12px rgba(255, 176, 86, 0.24);
+}
+
+.cascade-toast[data-combo-tier="mythic"] .cascade-toast-value {
+  background: linear-gradient(180deg, #fff8cf 0%, #ffd36e 28%, #ff8ed2 68%, #ff72a8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
 }
 
 .persistent-hint {
@@ -2041,22 +2146,72 @@ body {
   }
 }
 
-@keyframes cascade-toast-pop {
+@keyframes cascade-toast-bump {
   0% {
-    opacity: 0;
-    transform: translate(-100%, -2px) scale(0.7);
+    transform: translate(-100%, -8px) scale(0.96);
   }
-  16% {
-    opacity: 1;
-    transform: translate(-100%, 0) scale(1.08);
-  }
-  72% {
-    opacity: 1;
-    transform: translate(-100%, -8px) scale(1);
+  58% {
+    transform: translate(-100%, -10px) scale(1.04);
   }
   100% {
-    opacity: 0;
-    transform: translate(-100%, -16px) scale(0.94);
+    transform: translate(-100%, -8px) scale(1);
+  }
+}
+
+@keyframes cascade-toast-bump-strong {
+  0% {
+    transform: translate(-100%, -8px) scale(0.94);
+  }
+  34% {
+    transform: translate(-100%, -12px) scale(1.08);
+  }
+  64% {
+    transform: translate(-100%, -6px) scale(0.98);
+  }
+  100% {
+    transform: translate(-100%, -8px) scale(1.02);
+  }
+}
+
+@keyframes cascade-toast-bump-legendary {
+  0% {
+    transform: translate(-100%, -8px) scale(0.92) rotate(-1deg);
+  }
+  26% {
+    transform: translate(-100%, -14px) scale(1.1) rotate(1.2deg);
+  }
+  60% {
+    transform: translate(-100%, -6px) scale(0.99) rotate(-0.8deg);
+  }
+  100% {
+    transform: translate(-100%, -8px) scale(1.03) rotate(0deg);
+  }
+}
+
+@keyframes cascade-toast-bump-mythic {
+  0% {
+    transform: translate(-100%, -8px) scale(0.9) rotate(-1.4deg);
+  }
+  22% {
+    transform: translate(-100%, -16px) scale(1.14) rotate(1.8deg);
+  }
+  48% {
+    transform: translate(-100%, -4px) scale(0.98) rotate(-1.1deg);
+  }
+  74% {
+    transform: translate(-100%, -12px) scale(1.08) rotate(0.9deg);
+  }
+  100% {
+    transform: translate(-100%, -8px) scale(1.04) rotate(0deg);
+  }
+}
+
+@keyframes cascade-toast-mythic-glow {
+  0% {
+    filter: drop-shadow(0 3px 0 rgba(255, 252, 242, 0.96)) drop-shadow(0 12px 22px rgba(255, 146, 108, 0.28));
+  }
+  100% {
+    filter: drop-shadow(0 3px 0 rgba(255, 252, 242, 1)) drop-shadow(0 16px 28px rgba(255, 112, 190, 0.38));
   }
 }
 

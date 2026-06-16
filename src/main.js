@@ -51,20 +51,17 @@ const HIVE_TYPE = "hive";
 const HIVE_KIND = { key: "hive", label: "Lightball", name: "光球" };
 const FIRST_SCREEN_STATIC_ASSET_PATHS = ["./assets/HandPointer.png"];
 const GRASS_KIND_KEY = "grass";
-const RECYCLE_HIVE_THRESHOLD = 15;
-const COLLECTION_TRAY_TIP = "触发特殊道具，充能获得彩虹花！";
-const SPECIAL_CHARGE_VALUES = {
-  [WINDMILL_TYPE]: 2,
-  [MERGED_WINDMILL_TYPE]: 2,
-  [BOMB_TYPE]: 5,
-  [HIVE_TYPE]: 0,
-};
+const RECYCLE_HIVE_THRESHOLD = 100;
+const COLLECTION_TRAY_TIP = "消除非目标棋子可充能，攒满生成光球！";
 const HIVE_REPLACE_DURATION = 150;
 const HIVE_GROW_DURATION = 220;
 const HIVE_REWARD_FLIGHT_DURATION = 720;
+const ELIMINATION_COMBO_REWARD_FLIGHT_DURATION = 820;
+const ELIMINATION_COMBO_REWARD_STAGGER = 90;
 const RECYCLE_BATCH_LAUNCH_STAGGER = 300;
 const RECYCLE_FINAL_SETTLE_DURATION = 280;
 const ENABLE_TUTORIAL = false;
+const ELIMINATION_COMBO_THRESHOLD = 20;
 const BRICK_ASSET_PATHS = ["./assets/brick.png", "./assets/brick_2.png"];
 const CRATE_ASSET_PATH = "./assets/box.png";
 const ICE_ASSET_PATH = "./assets/ice.png";
@@ -79,6 +76,7 @@ export function initialize(doc = globalThis.document) {
   const hudView = createHudView({
     elements,
     appTitle: APP_TITLE,
+    onEliminationComboResolve: queueEliminationComboReward,
   });
   const tileView = createTileView({
     brickLayerElement: elements.brickLayerElement,
@@ -93,6 +91,7 @@ export function initialize(doc = globalThis.document) {
   let collectionTrayFullBloomTimer = null;
   let recycleChargeAnimationFrame = 0;
   let recycleChargeAnimationToken = 0;
+  let eliminationComboRewardChain = Promise.resolve();
   let wasCollectionTrayFull = false;
   let hasCollectionTrayRendered = false;
 
@@ -486,7 +485,7 @@ export function initialize(doc = globalThis.document) {
     const displayedLabelCharge = Math.max(0, Math.min(RECYCLE_HIVE_THRESHOLD, labelCharge ?? displayedMeterCharge));
     const chargePercent = displayedMeterCharge / RECYCLE_HIVE_THRESHOLD;
     const isFullCharge = displayedMeterCharge >= RECYCLE_HIVE_THRESHOLD - 0.001;
-    const roundedLabelCharge = Math.round(displayedLabelCharge);
+    const formattedLabelCharge = formatChargeValue(displayedLabelCharge);
     const petalOpenProgress = Math.min(1, Math.max(0, Math.pow(chargePercent, 0.82)));
 
     let meterElement = elements.collectionTrayElement.querySelector(".energy-meter");
@@ -525,8 +524,8 @@ export function initialize(doc = globalThis.document) {
     meterElement.style.setProperty("--charge-progress", String(chargePercent));
     meterElement.style.setProperty("--petal-open-progress", String(petalOpenProgress));
     meterElement.classList.toggle("is-full", isFullCharge);
-    elements.collectionTrayElement.setAttribute("aria-label", `当前光球能量 ${roundedLabelCharge} / ${RECYCLE_HIVE_THRESHOLD}`);
-    elements.collectionTrayCountElement.textContent = `${roundedLabelCharge} / ${RECYCLE_HIVE_THRESHOLD}`;
+    elements.collectionTrayElement.setAttribute("aria-label", `当前光球能量 ${formattedLabelCharge} / ${RECYCLE_HIVE_THRESHOLD}`);
+    elements.collectionTrayCountElement.textContent = `${formattedLabelCharge} / ${RECYCLE_HIVE_THRESHOLD}`;
 
     if (isFullCharge && hasCollectionTrayRendered && !wasCollectionTrayFull) {
       triggerCollectionTrayFullBloom(meterElement);
@@ -633,6 +632,75 @@ export function initialize(doc = globalThis.document) {
       elements.collectionTrayTipElement.hidden = true;
       collectionTrayTipTimer = null;
     }, 2200);
+  }
+
+  function formatChargeValue(value) {
+    const normalizedValue = Math.round(Math.max(0, value) * 2) / 2;
+    return Number.isInteger(normalizedValue) ? String(normalizedValue) : normalizedValue.toFixed(1);
+  }
+
+  function queueEliminationComboReward(payload) {
+    eliminationComboRewardChain = eliminationComboRewardChain
+      .catch(() => {})
+      .then(() => handleEliminationComboReward(payload));
+    return eliminationComboRewardChain;
+  }
+
+  async function handleEliminationComboReward({ count, sourceRect } = {}) {
+    if (!Number.isFinite(count) || count < ELIMINATION_COMBO_THRESHOLD) {
+      return { chargeGain: 0, hiveCount: 0 };
+    }
+
+    if (state.isLevelCompleted) {
+      return { chargeGain: 0, hiveCount: 0 };
+    }
+
+    while (state.isProcessing) {
+      await wait(60);
+    }
+
+    if (state.isLevelCompleted) {
+      return { chargeGain: 0, hiveCount: 0 };
+    }
+
+    const chargeGain = count / 2;
+    const particleCount = Math.max(1, Math.floor(count / 5));
+    const particleChargeGain = chargeGain / particleCount;
+    const targetRect = getRecycleTargetRect();
+
+    if (sourceRect && targetRect) {
+      await Promise.all(
+        Array.from({ length: particleCount }, (_, index) => new Promise((resolve) => {
+          window.setTimeout(() => {
+            tileView.flyLightballParticle({
+              fromRect: sourceRect,
+              targetRect,
+              duration: ELIMINATION_COMBO_REWARD_FLIGHT_DURATION,
+              delay: 0,
+              spawnDuration: 120,
+              holdDuration: 48,
+              spawnOffsetX: (index - (particleCount - 1) / 2) * 8,
+              spawnOffsetY: -Math.abs(index - (particleCount - 1) / 2) * 4,
+              targetOffsetX: (index % 2 === 0 ? -1 : 1) * Math.min(12, 4 + index * 2),
+              targetOffsetY: -Math.min(10, index * 2),
+              arcMultiplier: 1.02 + Math.min(0.18, index * 0.04),
+              liftMultiplier: 1.04 + Math.min(0.16, index * 0.03),
+              curveSide: index % 2 === 0 ? -1 : 1,
+              onArrive: () => {
+                state.recycleChargePreview += particleChargeGain;
+                renderCollectionTray();
+                resolve();
+              },
+            });
+          }, index * ELIMINATION_COMBO_REWARD_STAGGER);
+        })),
+      );
+    } else {
+      state.recycleChargePreview += chargeGain;
+      renderCollectionTray();
+    }
+
+    return resolveRecycleProgress(chargeGain);
   }
 
   async function resolveRecycleProgress(chargeGain) {
@@ -744,50 +812,52 @@ export function initialize(doc = globalThis.document) {
     return parts.length > 0 ? `，${parts.join("，")}` : "";
   }
 
-  function getSpecialChainBonus(triggeredSpecialCount) {
-    const normalizedCount = Math.max(0, triggeredSpecialCount || 0);
-    return normalizedCount >= 2 ? normalizedCount : 0;
+  function isChargeableTile(tile) {
+    return Boolean(tile) && !tile.special;
   }
 
-  function getSpecialChargeValue(type) {
-    return SPECIAL_CHARGE_VALUES[type] ?? 0;
+  function collectExcludedHiveTargetTileIds({ hiveEffects = [] } = {}) {
+    const excludedTileIds = new Set();
+
+    for (const effect of hiveEffects) {
+      for (const targetTileId of effect?.targetTileIds ?? []) {
+        excludedTileIds.add(targetTileId);
+      }
+    }
+
+    return excludedTileIds;
   }
 
-  function createSpecialChargeCounter({ chainBonus = 0, bonusOriginTileId = null } = {}) {
-    return (effectOrType) => {
-      const effect = typeof effectOrType === "string" ? null : effectOrType;
-      const type = effect?.type ?? effectOrType;
-      const baseCharge = getSpecialChargeValue(type);
-      if (baseCharge <= 0) {
-        return 0;
+  function countRemovedFlowers(removedTiles, { excludedTileIds = null } = {}) {
+    return removedTiles.reduce((sum, tile) => {
+      if (!isChargeableTile(tile) || excludedTileIds?.has(tile.id)) {
+        return sum;
       }
 
-      const bonusCharge = effect?.originTileId != null && effect.originTileId === bonusOriginTileId
-        ? Math.max(0, chainBonus)
-        : 0;
-      return baseCharge + bonusCharge;
+      return sum + 1;
+    }, 0);
+  }
+
+  function createEliminationComboTracker() {
+    let removedFlowerCount = 0;
+    hudView.hideEliminationCombo({ immediate: true, collectReward: true });
+
+    return {
+      addRemovedTiles(removedTiles, options = {}) {
+        removedFlowerCount += countRemovedFlowers(removedTiles, options);
+        if (removedFlowerCount >= ELIMINATION_COMBO_THRESHOLD) {
+          hudView.showEliminationCombo(removedFlowerCount);
+        }
+        return removedFlowerCount;
+      },
+      getTotal() {
+        return removedFlowerCount;
+      },
     };
   }
 
-  function calculateSpecialChargeGain({ windmillEffects = [], hiveEffects = [], bombEffects = [] } = {}, chainBonus = 0) {
-    const baseCharge = [...windmillEffects, ...hiveEffects, ...bombEffects].reduce(
-      (sum, effect) => sum + getSpecialChargeValue(effect.type),
-      0,
-    );
-
-    const normalizedChainBonus = Math.max(0, chainBonus);
-    if (baseCharge <= 0 && normalizedChainBonus <= 0) {
-      return 0;
-    }
-
-    return baseCharge + normalizedChainBonus;
-  }
-
-  function showSpecialChainToast(triggeredSpecialCount) {
-    const chainBonus = getSpecialChainBonus(triggeredSpecialCount);
-    if (triggeredSpecialCount >= 2 && chainBonus > 0) {
-      hudView.showCascadeToast(chainBonus);
-    }
+  async function finalizeEliminationCombo({ collectReward = true, immediate = false } = {}) {
+    await Promise.resolve(hudView.hideEliminationCombo({ immediate, collectReward }));
   }
 
   function getRecycleSourceRect() {
@@ -828,13 +898,23 @@ export function initialize(doc = globalThis.document) {
     return { ...state.goalProgress };
   }
 
-  function classifyRemovedTiles(removedTiles, recycleGoalProgress) {
+  function classifyRemovedTiles(removedTiles, recycleGoalProgress, { excludedChargeTileIds = null } = {}) {
     const goalCounts = new Map(getCurrentLevel().goals.map((goal) => [goal.kind, goal.count]));
     const goalTileIds = new Set();
+    const chargeTileIds = new Set();
 
     for (const tile of removedTiles) {
+      if (!isChargeableTile(tile)) {
+        continue;
+      }
+
+      if (excludedChargeTileIds?.has(tile.id)) {
+        continue;
+      }
+
       const goalCount = goalCounts.get(tile.kind.key);
       if (!goalCount) {
+        chargeTileIds.add(tile.id);
         continue;
       }
 
@@ -844,10 +924,14 @@ export function initialize(doc = globalThis.document) {
         recycleGoalProgress[tile.kind.key] = progress + 1;
         continue;
       }
+
+      chargeTileIds.add(tile.id);
     }
 
     return {
       goalTileIds,
+      chargeTileIds,
+      chargeGain: chargeTileIds.size,
     };
   }
 
@@ -859,6 +943,7 @@ export function initialize(doc = globalThis.document) {
   async function processTurn(tile) {
     state.isProcessing = true;
     state.movesUsed += 1;
+    const eliminationComboTracker = createEliminationComboTracker();
     const clickedCell = { x: tile.x, y: tile.y };
     renderHud();
     tileView.syncInteractivity();
@@ -882,6 +967,7 @@ export function initialize(doc = globalThis.document) {
     });
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
     const initialRemovedTileResolution = classifyRemovedTiles(initialResult.removedTiles, recycleGoalProgress);
+    eliminationComboTracker.addRemovedTiles(initialResult.removedTiles);
     const initialResolution = await animateResolution({
       result: initialResult,
       tileView,
@@ -889,7 +975,7 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: createSpecialChargeCounter(),
+      shouldChargeTile: (candidate) => initialRemovedTileResolution.chargeTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
@@ -901,6 +987,7 @@ export function initialize(doc = globalThis.document) {
       clickedCell,
       previousResult: initialResult,
       recycleGoalProgress,
+      eliminationComboTracker,
     });
     await Promise.all([
       initialResolution.goalFlights,
@@ -909,7 +996,7 @@ export function initialize(doc = globalThis.document) {
       ...cascadeResult.recycleFlights,
     ]);
 
-    const recycleResult = await resolveRecycleProgress(cascadeResult.recycleChargeGain);
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.chargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       await completeLevelWithCleanup();
@@ -927,6 +1014,7 @@ export function initialize(doc = globalThis.document) {
         detail: `${getCurrentLevelLabel()} 未完成目标`,
         actionLabel: getActionButtonLabel(),
       });
+      await finalizeEliminationCombo();
       return;
     }
 
@@ -940,11 +1028,13 @@ export function initialize(doc = globalThis.document) {
     } else {
       hudView.setStatus("就绪", `本次未形成后续消除${recycleStatusSuffix}`);
     }
+    await finalizeEliminationCombo();
   }
 
   async function processMergedWindmills(primaryTile, secondaryTile) {
     state.isProcessing = true;
     state.movesUsed += 1;
+    const eliminationComboTracker = createEliminationComboTracker();
     renderHud();
     tileView.syncInteractivity();
 
@@ -963,7 +1053,6 @@ export function initialize(doc = globalThis.document) {
       suppressedSpecialIds: new Set([secondaryTile.id]),
       mergedSourceTileIds: new Set([secondaryTile.id]),
     });
-    const specialChainBonus = getSpecialChainBonus(specialChain.triggeredSpecialCount);
     hudView.setStatus(
       "大风车合成",
       `消耗 1 步，合成清除 3 行 3 列共 ${specialChain.tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
@@ -980,11 +1069,15 @@ export function initialize(doc = globalThis.document) {
       isBlocked,
       isHole,
     });
-    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
-    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
     result.windmillEffects = specialChain.windmillEffects;
     result.bombEffects = specialChain.bombEffects;
     result.hiveEffects = specialChain.hiveEffects;
+    const excludedHiveTargetTileIds = collectExcludedHiveTargetTileIds(result);
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress, {
+      excludedChargeTileIds: excludedHiveTargetTileIds,
+    });
+    eliminationComboTracker.addRemovedTiles(result.removedTiles, { excludedTileIds: excludedHiveTargetTileIds });
     const resolution = await animateResolution({
       result,
       tileView,
@@ -992,12 +1085,11 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: createSpecialChargeCounter({ chainBonus: specialChainBonus, bonusOriginTileId: primaryTile.id }),
+      shouldChargeTile: (candidate) => initialRemovedTileResolution.chargeTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
-      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
       onAfterRemoval: renderObstacles,
     });
 
@@ -1005,6 +1097,7 @@ export function initialize(doc = globalThis.document) {
       clickedCell,
       previousResult: result,
       recycleGoalProgress,
+      eliminationComboTracker,
     });
     await Promise.all([
       resolution.goalFlights,
@@ -1013,8 +1106,7 @@ export function initialize(doc = globalThis.document) {
       ...cascadeResult.recycleFlights,
     ]);
 
-    const initialChargeGain = calculateSpecialChargeGain(specialChain, specialChainBonus);
-    const recycleResult = await resolveRecycleProgress(initialChargeGain + cascadeResult.recycleChargeGain);
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.chargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       await completeLevelWithCleanup();
@@ -1032,6 +1124,7 @@ export function initialize(doc = globalThis.document) {
         detail: `${getCurrentLevelLabel()} 未完成目标`,
         actionLabel: getActionButtonLabel(),
       });
+      await finalizeEliminationCombo();
       return;
     }
 
@@ -1045,18 +1138,19 @@ export function initialize(doc = globalThis.document) {
     } else {
       hudView.setStatus("就绪", `大风车合成清除了 ${result.removedTiles.length} 个格子${recycleStatusSuffix}`);
     }
+    await finalizeEliminationCombo();
   }
 
   async function processWindmill(tile) {
     state.isProcessing = true;
     state.movesUsed += 1;
+    const eliminationComboTracker = createEliminationComboTracker();
     renderHud();
     tileView.syncInteractivity();
 
     const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: tile.x, y: tile.y };
     const specialChain = collectSpecialChain(tile, columns, rows);
-    const specialChainBonus = getSpecialChainBonus(specialChain.triggeredSpecialCount);
     hudView.setStatus(
       "风车触发",
       `连锁触发 ${specialChain.triggeredSpecialCount} 个道具，影响 ${specialChain.tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
@@ -1075,6 +1169,7 @@ export function initialize(doc = globalThis.document) {
     });
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
     const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
+    eliminationComboTracker.addRemovedTiles(result.removedTiles);
     result.windmillEffects = specialChain.windmillEffects;
     result.bombEffects = specialChain.bombEffects;
     result.hiveEffects = specialChain.hiveEffects;
@@ -1085,12 +1180,11 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: createSpecialChargeCounter({ chainBonus: specialChainBonus, bonusOriginTileId: tile.id }),
+      shouldChargeTile: (candidate) => initialRemovedTileResolution.chargeTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
-      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
       onAfterRemoval: renderObstacles,
     });
 
@@ -1098,6 +1192,7 @@ export function initialize(doc = globalThis.document) {
       clickedCell,
       previousResult: result,
       recycleGoalProgress,
+      eliminationComboTracker,
     });
     await Promise.all([
       resolution.goalFlights,
@@ -1106,8 +1201,7 @@ export function initialize(doc = globalThis.document) {
       ...cascadeResult.recycleFlights,
     ]);
 
-    const initialChargeGain = calculateSpecialChargeGain(specialChain, specialChainBonus);
-    const recycleResult = await resolveRecycleProgress(initialChargeGain + cascadeResult.recycleChargeGain);
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.chargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       await completeLevelWithCleanup();
@@ -1125,6 +1219,7 @@ export function initialize(doc = globalThis.document) {
         detail: `${getCurrentLevelLabel()} 未完成目标`,
         actionLabel: getActionButtonLabel(),
       });
+      await finalizeEliminationCombo();
       return;
     }
 
@@ -1138,6 +1233,7 @@ export function initialize(doc = globalThis.document) {
     } else {
       hudView.setStatus("就绪", `风车未形成后续连通块消除${recycleStatusSuffix}`);
     }
+    await finalizeEliminationCombo();
   }
 
   async function processHive(tile) {
@@ -1162,6 +1258,7 @@ export function initialize(doc = globalThis.document) {
 
     state.isProcessing = true;
     state.movesUsed += 1;
+    const eliminationComboTracker = createEliminationComboTracker();
     renderHud();
     tileView.syncInteractivity();
 
@@ -1187,8 +1284,6 @@ export function initialize(doc = globalThis.document) {
       isBlocked,
       isHole,
     });
-    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
-    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
     result.hiveEffects = [
       {
         originTileId: tile.id,
@@ -1198,6 +1293,12 @@ export function initialize(doc = globalThis.document) {
         targetTileIds: new Set(targetTiles.map((targetTile) => targetTile.id)),
       },
     ];
+    const excludedHiveTargetTileIds = collectExcludedHiveTargetTileIds(result);
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress, {
+      excludedChargeTileIds: excludedHiveTargetTileIds,
+    });
+    eliminationComboTracker.addRemovedTiles(result.removedTiles, { excludedTileIds: excludedHiveTargetTileIds });
     const resolution = await animateResolution({
       result,
       tileView,
@@ -1205,7 +1306,7 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: createSpecialChargeCounter(),
+      shouldChargeTile: (candidate) => initialRemovedTileResolution.chargeTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
@@ -1217,6 +1318,7 @@ export function initialize(doc = globalThis.document) {
       clickedCell,
       previousResult: result,
       recycleGoalProgress,
+      eliminationComboTracker,
     });
     await Promise.all([
       resolution.goalFlights,
@@ -1225,8 +1327,7 @@ export function initialize(doc = globalThis.document) {
       ...cascadeResult.recycleFlights,
     ]);
 
-    const initialChargeGain = calculateSpecialChargeGain(result);
-    const recycleResult = await resolveRecycleProgress(initialChargeGain + cascadeResult.recycleChargeGain);
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.chargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       await completeLevelWithCleanup();
@@ -1244,6 +1345,7 @@ export function initialize(doc = globalThis.document) {
         detail: `${getCurrentLevelLabel()} 未完成目标`,
         actionLabel: getActionButtonLabel(),
       });
+      await finalizeEliminationCombo();
       return;
     }
 
@@ -1257,11 +1359,13 @@ export function initialize(doc = globalThis.document) {
     } else {
       hudView.setStatus("就绪", `光球清除了 ${targetKindName}${recycleStatusSuffix}`);
     }
+    await finalizeEliminationCombo();
   }
 
   async function processDualHive(primaryTile, secondaryTile) {
     state.isProcessing = true;
     state.movesUsed += 1;
+    const eliminationComboTracker = createEliminationComboTracker();
     renderHud();
     tileView.syncInteractivity();
 
@@ -1287,8 +1391,6 @@ export function initialize(doc = globalThis.document) {
       isBlocked,
       isHole,
     });
-    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
-    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
     result.hiveEffects = [
       {
         type: HIVE_TYPE,
@@ -1307,6 +1409,12 @@ export function initialize(doc = globalThis.document) {
         ),
       },
     ];
+    const excludedHiveTargetTileIds = collectExcludedHiveTargetTileIds(result);
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress, {
+      excludedChargeTileIds: excludedHiveTargetTileIds,
+    });
+    eliminationComboTracker.addRemovedTiles(result.removedTiles, { excludedTileIds: excludedHiveTargetTileIds });
     const resolution = await animateResolution({
       result,
       tileView,
@@ -1314,7 +1422,7 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: createSpecialChargeCounter(),
+      shouldChargeTile: (candidate) => initialRemovedTileResolution.chargeTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
@@ -1326,6 +1434,7 @@ export function initialize(doc = globalThis.document) {
       clickedCell,
       previousResult: result,
       recycleGoalProgress,
+      eliminationComboTracker,
     });
     await Promise.all([
       resolution.goalFlights,
@@ -1334,8 +1443,7 @@ export function initialize(doc = globalThis.document) {
       ...cascadeResult.recycleFlights,
     ]);
 
-    const initialChargeGain = calculateSpecialChargeGain(result);
-    const recycleResult = await resolveRecycleProgress(initialChargeGain + cascadeResult.recycleChargeGain);
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.chargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       await completeLevelWithCleanup();
@@ -1353,6 +1461,7 @@ export function initialize(doc = globalThis.document) {
         detail: `${getCurrentLevelLabel()} 未完成目标`,
         actionLabel: getActionButtonLabel(),
       });
+      await finalizeEliminationCombo();
       return;
     }
 
@@ -1366,18 +1475,19 @@ export function initialize(doc = globalThis.document) {
     } else {
       hudView.setStatus("就绪", `双光球清空全盘${recycleStatusSuffix}`);
     }
+    await finalizeEliminationCombo();
   }
 
   async function processBomb(tile) {
     state.isProcessing = true;
     state.movesUsed += 1;
+    const eliminationComboTracker = createEliminationComboTracker();
     renderHud();
     tileView.syncInteractivity();
 
     const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: tile.x, y: tile.y };
     const specialChain = collectSpecialChain(tile, columns, rows);
-    const specialChainBonus = getSpecialChainBonus(specialChain.triggeredSpecialCount);
     hudView.setStatus(
       "炸弹触发",
       `连锁触发 ${specialChain.triggeredSpecialCount} 个道具，影响 ${specialChain.tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
@@ -1394,11 +1504,15 @@ export function initialize(doc = globalThis.document) {
       isBlocked,
       isHole,
     });
-    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
-    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
     result.windmillEffects = specialChain.windmillEffects;
     result.bombEffects = specialChain.bombEffects;
     result.hiveEffects = specialChain.hiveEffects;
+    const excludedHiveTargetTileIds = collectExcludedHiveTargetTileIds(result);
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress, {
+      excludedChargeTileIds: excludedHiveTargetTileIds,
+    });
+    eliminationComboTracker.addRemovedTiles(result.removedTiles, { excludedTileIds: excludedHiveTargetTileIds });
     const resolution = await animateResolution({
       result,
       tileView,
@@ -1406,12 +1520,11 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: createSpecialChargeCounter({ chainBonus: specialChainBonus, bonusOriginTileId: tile.id }),
+      shouldChargeTile: (candidate) => initialRemovedTileResolution.chargeTileIds.has(candidate.id),
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
-      onSpecialEffectsComplete: () => showSpecialChainToast(specialChain.triggeredSpecialCount),
       onAfterRemoval: renderObstacles,
     });
 
@@ -1419,6 +1532,7 @@ export function initialize(doc = globalThis.document) {
       clickedCell,
       previousResult: result,
       recycleGoalProgress,
+      eliminationComboTracker,
     });
     await Promise.all([
       resolution.goalFlights,
@@ -1427,8 +1541,7 @@ export function initialize(doc = globalThis.document) {
       ...cascadeResult.recycleFlights,
     ]);
 
-    const initialChargeGain = calculateSpecialChargeGain(specialChain, specialChainBonus);
-    const recycleResult = await resolveRecycleProgress(initialChargeGain + cascadeResult.recycleChargeGain);
+    const recycleResult = await resolveRecycleProgress(initialRemovedTileResolution.chargeGain + cascadeResult.recycleChargeGain);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
       await completeLevelWithCleanup();
@@ -1446,6 +1559,7 @@ export function initialize(doc = globalThis.document) {
         detail: `${getCurrentLevelLabel()} 未完成目标`,
         actionLabel: getActionButtonLabel(),
       });
+      await finalizeEliminationCombo();
       return;
     }
 
@@ -1459,6 +1573,7 @@ export function initialize(doc = globalThis.document) {
     } else {
       hudView.setStatus("就绪", `炸弹清除了 ${result.removedTiles.length} 个格子${recycleStatusSuffix}`);
     }
+    await finalizeEliminationCombo();
   }
 
   async function resolveBoardMatches(contextLabel, {
@@ -1467,6 +1582,7 @@ export function initialize(doc = globalThis.document) {
     recycleGoalProgress = createRecycleGoalProgressSnapshot(),
     allowSpecialCreation = true,
     countRecycle = true,
+    eliminationComboTracker = null,
   } = {}) {
     let cascadeCount = 0;
     let recycleChargeGain = 0;
@@ -1497,9 +1613,13 @@ export function initialize(doc = globalThis.document) {
         isHole,
         specialCreationContext: createSpecialCreationContext(previousResult, clickedCell, allowSpecialCreation),
       });
-      const removedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
+      const excludedHiveTargetTileIds = collectExcludedHiveTargetTileIds(result);
+      const removedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress, {
+        excludedChargeTileIds: excludedHiveTargetTileIds,
+      });
+      eliminationComboTracker?.addRemovedTiles(result.removedTiles, { excludedTileIds: excludedHiveTargetTileIds });
       if (countRecycle) {
-        recycleChargeGain += calculateSpecialChargeGain(result);
+        recycleChargeGain += removedTileResolution.chargeGain;
       }
       previousResult = result;
       const resolution = await animateResolution({
@@ -1509,7 +1629,9 @@ export function initialize(doc = globalThis.document) {
         fallDuration: FALL_DURATION,
         flyDuration: FLY_DURATION,
         isGoalTile: (candidate) => removedTileResolution.goalTileIds.has(candidate.id),
-        getSpecialChargeCount: countRecycle ? createSpecialChargeCounter() : () => 0,
+        shouldChargeTile: countRecycle
+          ? (candidate) => removedTileResolution.chargeTileIds.has(candidate.id)
+          : () => false,
         getGoalRect: hudView.getGoalSwatchRect,
         getRecycleRect: getRecycleTargetRect,
         onGoalArrive: handleGoalArrive,
@@ -1539,6 +1661,7 @@ export function initialize(doc = globalThis.document) {
       detail: `${getCurrentLevelLabel()} 已达成全部目标`,
       actionLabel: getActionButtonLabel(),
     });
+    await finalizeEliminationCombo();
   }
 
   async function runEndgameSpecialCleanup() {
@@ -1773,7 +1896,7 @@ export function initialize(doc = globalThis.document) {
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
       isGoalTile: (candidate) => removedTileResolution.goalTileIds.has(candidate.id),
-      getSpecialChargeCount: () => 0,
+      shouldChargeTile: () => false,
       getGoalRect: hudView.getGoalSwatchRect,
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,

@@ -12,8 +12,6 @@ const BOMB_PRIME_DURATION = 300;
 const BOMB_BLAST_RADIUS_CELLS = 2;
 const BOMB_POP_DURATION = 220;
 const BOMB_SHOCKWAVE_DURATION = 260;
-const SPECIAL_CHARGE_PARTICLE_DURATION = 760;
-const SPECIAL_CHARGE_PARTICLE_STAGGER = 42;
 const MERGED_WINDMILL_TYPE = "mergedWindmill";
 const WINDMILL_FUSION_RETREAT_DURATION = 140;
 const WINDMILL_FUSION_SLAM_DURATION = 220;
@@ -45,7 +43,7 @@ export async function animateResolution({
   fallDuration,
   flyDuration,
   isGoalTile,
-  getSpecialChargeCount,
+  shouldChargeTile,
   getGoalRect,
   getRecycleRect,
   onGoalArrive,
@@ -113,7 +111,7 @@ export async function animateResolution({
           windmillTimings,
           flyDuration,
           isGoalTile,
-          getSpecialChargeCount,
+          shouldChargeTile,
           getGoalRect,
           getRecycleRect,
           onGoalArrive,
@@ -132,7 +130,7 @@ export async function animateResolution({
           tileView,
           flyDuration,
           isGoalTile,
-          getSpecialChargeCount,
+          shouldChargeTile,
           getGoalRect,
           getRecycleRect,
           onGoalArrive,
@@ -152,6 +150,7 @@ export async function animateResolution({
           tileView,
           flyDuration,
           isGoalTile,
+          shouldChargeTile,
           getGoalRect,
           getRecycleRect,
           onGoalArrive,
@@ -197,9 +196,16 @@ export async function animateResolution({
       if (!shouldFlyToGoal) {
         recycleFlights.push(new Promise((resolve) => {
           setTimeout(() => {
+            const shouldFlyToRecycle = shouldChargeTile?.(tile) ?? false;
             tileView.flyTile(tile.id, {
               duration: flyDuration,
-              onArrive: resolve,
+              targetRect: shouldFlyToRecycle ? (getRecycleRect?.() ?? null) : null,
+              onArrive: () => {
+                if (shouldFlyToRecycle) {
+                  onRecycleArrive?.();
+                }
+                resolve();
+              },
             });
           }, delay);
         }));
@@ -247,7 +253,7 @@ async function animateWindmillEffect({
   windmillTimings,
   flyDuration,
   isGoalTile,
-  getSpecialChargeCount,
+  shouldChargeTile,
   getGoalRect,
   getRecycleRect,
   onGoalArrive,
@@ -301,8 +307,11 @@ async function animateWindmillEffect({
           windmillTimings,
           flyDuration,
           isGoalTile,
+          shouldChargeTile,
           getGoalRect,
+          getRecycleRect,
           onGoalArrive,
+          onRecycleArrive,
         })).finally(resolve);
       });
     }));
@@ -332,15 +341,6 @@ async function animateWindmillEffect({
 
   await wait(windmillTimings.fadeDuration);
 
-  queueSpecialChargeParticles({
-    tileView,
-    originRect,
-    chargeCount: getSpecialChargeCount?.(effect) ?? 0,
-    recycleFlights,
-    getRecycleRect,
-    onRecycleArrive,
-  });
-
   await Promise.all(targetImpactPromises);
 }
 
@@ -356,7 +356,7 @@ async function animateBombEffect({
   tileView,
   flyDuration,
   isGoalTile,
-  getSpecialChargeCount,
+  shouldChargeTile,
   getGoalRect,
   getRecycleRect,
   onGoalArrive,
@@ -445,9 +445,16 @@ async function animateBombEffect({
       }
 
       recycleFlights.push(new Promise((resolve) => {
+        const shouldFlyToRecycle = shouldChargeTile?.(targetTile) ?? false;
         tileView.flyTile(targetTile.id, {
           duration: flyDuration,
-          onArrive: resolve,
+          targetRect: shouldFlyToRecycle ? (getRecycleRect?.() ?? null) : null,
+          onArrive: () => {
+            if (shouldFlyToRecycle) {
+              onRecycleArrive?.();
+            }
+            resolve();
+          },
         });
       }));
     });
@@ -474,15 +481,6 @@ async function animateBombEffect({
 
   await wait(Math.max(BOMB_POP_DURATION, BOMB_SHOCKWAVE_DURATION));
 
-  queueSpecialChargeParticles({
-    tileView,
-    originRect,
-    chargeCount: getSpecialChargeCount?.(effect) ?? 0,
-    recycleFlights,
-    getRecycleRect,
-    onRecycleArrive,
-  });
-
   await Promise.all(childEffectPromises);
 }
 
@@ -496,6 +494,7 @@ async function animateHiveEffect({
   tileView,
   flyDuration,
   isGoalTile,
+  shouldChargeTile,
   getGoalRect,
   getRecycleRect,
   onGoalArrive,
@@ -512,8 +511,11 @@ async function animateHiveEffect({
       tileView,
       flyDuration,
       isGoalTile,
+      shouldChargeTile,
       getGoalRect,
+      getRecycleRect,
       onGoalArrive,
+      onRecycleArrive,
     });
     return;
   }
@@ -572,9 +574,16 @@ async function animateHiveEffect({
         }));
       } else {
         recycleFlights.push(new Promise((resolveFlight) => {
+          const shouldFlyToRecycle = shouldChargeTile?.(tile) ?? false;
           tileView.flyTile(tile.id, {
             duration: flyDuration,
-            onArrive: resolveFlight,
+            targetRect: shouldFlyToRecycle ? (getRecycleRect?.() ?? null) : null,
+            onArrive: () => {
+              if (shouldFlyToRecycle) {
+                onRecycleArrive?.();
+              }
+              resolveFlight();
+            },
           });
         }));
       }
@@ -595,8 +604,11 @@ async function animateDualHiveEffect({
   tileView,
   flyDuration,
   isGoalTile,
+  shouldChargeTile,
   getGoalRect,
+  getRecycleRect,
   onGoalArrive,
+  onRecycleArrive,
 }) {
   const fusionCenterX = (hiveEffect.originX + hiveEffect.secondaryX) / 2;
   const fusionCenterY = (hiveEffect.originY + hiveEffect.secondaryY) / 2;
@@ -649,16 +661,28 @@ async function animateDualHiveEffect({
       }
 
       animatedTileIds.add(tile.id);
-      const queue = isGoalTile?.(tile) ? goalFlights : recycleFlights;
-      queue.push(new Promise((resolve) => {
+      if (isGoalTile?.(tile)) {
+        goalFlights.push(new Promise((resolve) => {
+          tileView.flyTile(tile.id, {
+            duration: flyDuration,
+            targetRect: getGoalRect?.(tile.kind.key) ?? null,
+            onArrive: () => {
+              onGoalArrive?.(tile);
+              resolve();
+            },
+          });
+        }));
+        return;
+      }
+
+      recycleFlights.push(new Promise((resolve) => {
+        const shouldFlyToRecycle = shouldChargeTile?.(tile) ?? false;
         tileView.flyTile(tile.id, {
           duration: flyDuration,
-          targetRect: isGoalTile?.(tile)
-            ? getGoalRect?.(tile.kind.key) ?? null
-            : null,
+          targetRect: shouldFlyToRecycle ? (getRecycleRect?.() ?? null) : null,
           onArrive: () => {
-            if (isGoalTile?.(tile)) {
-              onGoalArrive?.(tile);
+            if (shouldFlyToRecycle) {
+              onRecycleArrive?.();
             }
             resolve();
           },
@@ -712,8 +736,11 @@ async function animateWindmillTargetHit({
   windmillTimings,
   flyDuration,
   isGoalTile,
+  shouldChargeTile,
   getGoalRect,
+  getRecycleRect,
   onGoalArrive,
+  onRecycleArrive,
 }) {
   const childEffect = effectByOriginId.get(targetId);
   if (childEffect) {
@@ -744,9 +771,16 @@ async function animateWindmillTargetHit({
   }
 
   recycleFlights.push(new Promise((resolve) => {
+    const shouldFlyToRecycle = shouldChargeTile?.(tile) ?? false;
     tileView.flyTile(tile.id, {
       duration: Math.max(flyDuration, windmillTimings.flowerFlyDuration),
-      onArrive: resolve,
+      targetRect: shouldFlyToRecycle ? (getRecycleRect?.() ?? null) : null,
+      onArrive: () => {
+        if (shouldFlyToRecycle) {
+          onRecycleArrive?.();
+        }
+        resolve();
+      },
     });
   }));
 }
@@ -759,45 +793,6 @@ function getWindmillTotalDuration(timings) {
   return timings.spinUpDuration + getWindmillCastDuration(timings) + timings.fadeDuration;
 }
 
-function queueSpecialChargeParticles({
-  tileView,
-  originRect,
-  chargeCount,
-  recycleFlights,
-  getRecycleRect,
-  onRecycleArrive,
-}) {
-  if (!originRect || chargeCount <= 0) {
-    return;
-  }
-
-  for (let index = 0; index < chargeCount; index += 1) {
-    recycleFlights.push(new Promise((resolve) => {
-      setTimeout(() => {
-        const targetRect = getRecycleRect?.() ?? null;
-        if (!targetRect) {
-          resolve();
-          return;
-        }
-
-        tileView.flyLightballParticle({
-          fromRect: originRect,
-          targetRect,
-          duration: SPECIAL_CHARGE_PARTICLE_DURATION,
-          spawnDuration: 0,
-          holdDuration: 0,
-          arcMultiplier: 0.84 + Math.min(0.12, index * 0.03),
-          liftMultiplier: 0.82 + Math.min(0.08, index * 0.02),
-          curveSide: index % 2 === 0 ? -1 : 1,
-          onArrive: () => {
-            onRecycleArrive?.();
-            resolve();
-          },
-        });
-      }, index * SPECIAL_CHARGE_PARTICLE_STAGGER);
-    }));
-  }
-}
 
 export async function animateBoardEntry({ board, tileView, columns, rows, entryGrowDuration, entryTileDelay }) {
   const entries = [];
