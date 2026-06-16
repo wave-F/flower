@@ -220,36 +220,162 @@ function pickStableTile(group) {
 }
 
 function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () => false, isHole = () => false }) {
-  const dropped = [];
-  const spawned = [];
+  const droppedById = new Map();
+  const spawnedById = new Map();
   const canOccupy = (x, y) => x >= 0 && x < columns && y >= 0 && y < rows && !isHole(x, y) && !isBlocked(x, y);
 
-  for (let y = rows - 1; y >= 0; y -= 1) {
-    for (let x = 0; x < columns; x += 1) {
-      if (!canOccupy(x, y) || board[y][x]) {
-        continue;
-      }
+  let moved = true;
+  while (moved) {
+    moved = false;
 
-      const source = findSourceCell(board, x, y, canOccupy, isBlocked, isHole);
-      if (source) {
-        const tile = board[source.y][source.x];
-        board[source.y][source.x] = null;
-        board[y][x] = tile;
-        dropped.push({ tile, fromX: source.x, fromY: source.y, toX: x, toY: y });
-        tile.x = x;
-        tile.y = y;
-        continue;
-      }
+    for (let y = rows - 2; y >= 0; y -= 1) {
+      for (let x = 0; x < columns; x += 1) {
+        const tile = board[y]?.[x] ?? null;
+        if (!tile) {
+          continue;
+        }
 
-      if (isReachableFromTop(board, x, y, canOccupy, isBlocked, isHole)) {
-        const tile = createTile(state, x, y, randomKind(tileKinds));
-        board[y][x] = tile;
-        spawned.push({ tile, fromRow: -1, toRow: y });
+        const nextPosition = findNextTilePosition(board, x, y, canOccupy, isBlocked, isHole);
+        if (!nextPosition || (nextPosition.x === x && nextPosition.y === y)) {
+          continue;
+        }
+
+        board[y][x] = null;
+        board[nextPosition.y][nextPosition.x] = tile;
+
+        const existingSpawn = spawnedById.get(tile.id);
+        if (existingSpawn) {
+          existingSpawn.toRow = nextPosition.y;
+        } else {
+          const existingMove = droppedById.get(tile.id);
+          if (existingMove) {
+            existingMove.toX = nextPosition.x;
+            existingMove.toY = nextPosition.y;
+          } else {
+            droppedById.set(tile.id, {
+              tile,
+              fromX: x,
+              fromY: y,
+              toX: nextPosition.x,
+              toY: nextPosition.y,
+            });
+          }
+        }
+
+        tile.x = nextPosition.x;
+        tile.y = nextPosition.y;
+        moved = true;
       }
+    }
+
+    const spawnCells = findSpawnCells(board, columns, rows, canOccupy, isBlocked, isHole);
+    for (const cell of spawnCells) {
+      const tile = createTile(state, cell.x, cell.y, randomKind(tileKinds));
+      board[cell.y][cell.x] = tile;
+      spawnedById.set(tile.id, { tile, fromRow: -1, toRow: cell.y });
+      moved = true;
     }
   }
 
-  return { dropped, spawned };
+  return { dropped: [...droppedById.values()], spawned: [...spawnedById.values()] };
+}
+
+function findSpawnCells(board, columns, rows, canOccupy, isBlocked, isHole) {
+  const spawnCells = [];
+
+  for (let x = 0; x < columns; x += 1) {
+    for (let y = 0; y < rows; y += 1) {
+      if (isBlocked(x, y)) {
+        break;
+      }
+
+      if (isHole(x, y)) {
+        continue;
+      }
+
+      if (canOccupy(x, y) && !board[y]?.[x]) {
+        spawnCells.push({ x, y });
+      }
+
+      break;
+    }
+  }
+
+  return spawnCells;
+}
+
+function findNextTilePosition(board, x, y, canOccupy, isBlocked, isHole) {
+  const verticalY = findVerticalLandingY(board, x, y, isBlocked, isHole);
+  if (verticalY > y) {
+    return { x, y: verticalY };
+  }
+
+  const slideTarget = findDiagonalSlideTarget(board, x, y, canOccupy, isBlocked, isHole);
+  if (slideTarget) {
+    return slideTarget;
+  }
+
+  return { x, y };
+}
+
+function findVerticalLandingY(board, x, startY, isBlocked, isHole) {
+  let landingY = startY;
+
+  for (let y = startY + 1; y < board.length; y += 1) {
+    if (isBlocked(x, y)) {
+      break;
+    }
+
+    if (board[y]?.[x]) {
+      break;
+    }
+
+    if (!isHole(x, y)) {
+      landingY = y;
+    }
+  }
+
+  return landingY;
+}
+
+function findDiagonalSlideTarget(board, x, y, canOccupy, isBlocked, isHole) {
+  if (y + 1 >= board.length) {
+    return null;
+  }
+
+  const candidateXs = (x + y) % 2 === 0 ? [x - 1, x + 1] : [x + 1, x - 1];
+  for (const targetX of candidateXs) {
+    const targetY = y + 1;
+    if (!canOccupy(targetX, targetY) || board[targetY]?.[targetX]) {
+      continue;
+    }
+
+    if (canCellFillVertically(board, targetX, targetY, isBlocked, isHole)) {
+      continue;
+    }
+
+    return { x: targetX, y: targetY };
+  }
+
+  return null;
+}
+
+function canCellFillVertically(board, x, y, isBlocked, isHole) {
+  for (let scanY = y - 1; scanY >= 0; scanY -= 1) {
+    if (isBlocked(x, scanY)) {
+      return false;
+    }
+
+    if (isHole(x, scanY)) {
+      continue;
+    }
+
+    if (board[scanY]?.[x]) {
+      return true;
+    }
+  }
+
+  return true;
 }
 
 function getPredecessorCells(board, x, y, canOccupy, isBlocked, isHole) {
@@ -274,6 +400,10 @@ function getPredecessorCells(board, x, y, canOccupy, isBlocked, isHole) {
     return candidates;
   }
 
+  if (isVerticalPathOpenToTop(x, y, isBlocked, isHole)) {
+    return candidates;
+  }
+
   for (const cell of diagonalCandidates) {
     if (!canOccupy(cell.x, cell.y)) {
       continue;
@@ -285,9 +415,9 @@ function getPredecessorCells(board, x, y, canOccupy, isBlocked, isHole) {
       continue;
     }
 
-    // If this neighbor column still has a valid vertical source above it,
-    // let that column fill itself first instead of stealing the tile sideways.
-    if (hasVerticalSource(board, cell.x, y, canOccupy, isBlocked, isHole)) {
+    // A tile only slides diagonally after it has already fallen as far as it
+    // can in its own column. If it can keep falling straight, do not slide.
+    if (canContinueVertical(board, cell.x, y, canOccupy, isBlocked, isHole)) {
       continue;
     }
 
@@ -298,24 +428,40 @@ function getPredecessorCells(board, x, y, canOccupy, isBlocked, isHole) {
 }
 
 function findSourceCell(board, targetX, targetY, canOccupy, isBlocked, isHole) {
-  const queue = getPredecessorCells(board, targetX, targetY, canOccupy, isBlocked, isHole).map((cell) => ({ ...cell }));
-  const visited = new Set(queue.map((cell) => `${cell.x},${cell.y}`));
+  const verticalSource = findVerticalSourceCell(board, targetX, targetY, isBlocked, isHole);
+  if (verticalSource) {
+    return verticalSource;
+  }
 
-  while (queue.length > 0) {
-    const cell = queue.shift();
+  if (isVerticalPathOpenToTop(targetX, targetY, isBlocked, isHole)) {
+    return null;
+  }
+
+  const diagonalCandidates = getPredecessorCells(board, targetX, targetY, canOccupy, isBlocked, isHole)
+    .filter((cell) => cell.x !== targetX);
+
+  for (const cell of diagonalCandidates) {
     const tile = board[cell.y]?.[cell.x] ?? null;
     if (tile) {
       return cell;
     }
+  }
 
-    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy, isBlocked, isHole)) {
-      const key = `${predecessor.x},${predecessor.y}`;
-      if (visited.has(key)) {
-        continue;
-      }
+  return null;
+}
 
-      visited.add(key);
-      queue.push(predecessor);
+function findVerticalSourceCell(board, x, targetY, isBlocked, isHole) {
+  for (let y = targetY - 1; y >= 0; y -= 1) {
+    if (isBlocked(x, y)) {
+      return null;
+    }
+
+    if (isHole(x, y)) {
+      continue;
+    }
+
+    if (board[y]?.[x]) {
+      return { x, y };
     }
   }
 
@@ -342,6 +488,36 @@ function hasVerticalSource(board, x, y, canOccupy, isBlocked, isHole) {
   }
 
   return false;
+}
+
+function isVerticalPathOpenToTop(x, y, isBlocked, isHole) {
+  for (let scanY = y - 1; scanY >= 0; scanY -= 1) {
+    if (isBlocked(x, scanY)) {
+      return false;
+    }
+
+    if (isHole(x, scanY)) {
+      continue;
+    }
+  }
+
+  return true;
+}
+
+function canContinueVertical(board, x, y, canOccupy, isBlocked, isHole) {
+  if (y >= board.length) {
+    return false;
+  }
+
+  if (isBlocked(x, y)) {
+    return false;
+  }
+
+  if (isHole(x, y)) {
+    return true;
+  }
+
+  return canOccupy(x, y) && !board[y]?.[x];
 }
 
 function isReachableFromTop(board, targetX, targetY, canOccupy, isBlocked, isHole) {

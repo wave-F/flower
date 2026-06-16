@@ -149,7 +149,6 @@ export const LEVELS = [
     rows: 8,
     moveLimit: 22,
     tileKinds: [1, 2, 3, 4, 5, 0],
-    holes: dashedColumn(3, 8, 0),
     crates: cratesFromCells([
       [0, 2], [1, 2], [2, 2],
       [5, 2], [6, 2], [7, 2],
@@ -167,15 +166,15 @@ export const LEVELS = [
     rows: 8,
     moveLimit: 24,
     tileKinds: [0, 2, 3, 4, 5, 6],
-    holes: combineHoles(
-      lineColumn(2, 8, [2, 3, 4, 5]),
-      lineColumn(5, 8, [1, 3, 4, 6]),
-    ),
     crates: cratesFromCells([
-      [1, 1], [6, 1],
-      [1, 2], [6, 2],
-      [1, 5], [6, 5],
-      [1, 6], [6, 6],
+      [0, 0], [7, 0],
+      [0, 1], [7, 1],
+      [0, 2], [7, 2],
+      [0, 3], [7, 3],
+      [0, 4], [7, 4],
+      [0, 5], [7, 5],
+      [0, 6], [7, 6],
+      [0, 7], [7, 7],
     ]),
     goals: [
       { kind: 2, count: 40 },
