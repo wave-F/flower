@@ -1,10 +1,13 @@
 import { getBoardMetrics } from "./boardLayout.js";
+import { createExplosionFx } from "./explosionFx.js";
 
 export function createTileView({ tileLayerElement, flyLayerElement, boardElement, boardShellElement, getInteractionDisabled }) {
   const tileElements = new Map();
   const tilePool = [];
+  const explosionFx = createExplosionFx({ boardShellElement });
 
   function clearAllTiles() {
+    explosionFx.clear();
     for (const element of tileElements.values()) {
       releaseTileElement(element);
     }
@@ -94,6 +97,41 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     }
 
     decorateTileElement(element, tile);
+  }
+
+  function playBombExplosion(rect, { strength = 1, maxRadius = null } = {}) {
+    explosionFx.emitExplosion({ rect, strength, maxRadius });
+  }
+
+  function primeBombTile(tileId, { duration = 280, maxScale = 1.28, onArrive } = {}) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      onArrive?.();
+      return;
+    }
+
+    const animation = element.animate([
+      { transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)", opacity: 1 },
+      { transform: "translate3d(-1px, 0, 0) scale(1.04) rotate(-2deg)", offset: 0.14 },
+      { transform: "translate3d(1px, 0, 0) scale(1.08) rotate(2deg)", offset: 0.28 },
+      { transform: "translate3d(-2px, 0, 0) scale(1.12) rotate(-3deg)", offset: 0.44 },
+      { transform: "translate3d(3px, 0, 0) scale(1.17) rotate(4deg)", offset: 0.62 },
+      { transform: "translate3d(-4px, 0, 0) scale(1.22) rotate(-5deg)", offset: 0.78 },
+      { transform: "translate3d(2px, 0, 0) scale(1.25) rotate(2deg)", offset: 0.9 },
+      { transform: `translate3d(0, 0, 0) scale(${maxScale}) rotate(0deg)`, opacity: 1 },
+    ], {
+      duration,
+      easing: "linear",
+      fill: "both",
+    });
+
+    animation.finished.then(() => {
+      animation.cancel();
+      element.style.transform = `scale(${maxScale})`;
+      onArrive?.();
+    }).catch(() => {
+      onArrive?.();
+    });
   }
 
   function setWindmillFusionState(tileId, { hideArrow = false, spin = false } = {}) {
@@ -1060,9 +1098,11 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     orbitTilesIntoFusion,
     playBoardFlash,
     playBoardShockwave,
+    primeBombTile,
     playLightningLinks,
     pulseTile,
     mountTileForEntry,
+    playBombExplosion,
     refreshTilePositions,
     popTile,
     clearLightballFxState,

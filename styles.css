@@ -779,6 +779,13 @@ body {
   z-index: 2;
   pointer-events: none;
 }
+.board-explosion-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
 
 .collection-tray-panel {
   position: relative;

@@ -13,8 +13,11 @@ const DUAL_LIGHTBALL_FLASH_DURATION = 260;
 const DUAL_LIGHTBALL_SHOCKWAVE_DURATION = 320;
 const DUAL_LIGHTBALL_POP_DURATION = 180;
 const DUAL_LIGHTBALL_WAVE_STAGGER = 14;
+const BOMB_PRIME_DURATION = 300;
+const BOMB_BLAST_RADIUS_CELLS = 2;
 const BOMB_POP_DURATION = 220;
-const BOMB_TARGET_STAGGER = 34;
+const BOMB_IMPACT_HOLD = 72;
+const BOMB_TARGET_STAGGER = 22;
 const SPECIAL_CHARGE_PARTICLE_DURATION = 420;
 const SPECIAL_CHARGE_PARTICLE_STAGGER = 70;
 const MERGED_WINDMILL_TYPE = "mergedWindmill";
@@ -340,7 +343,26 @@ async function animateBombEffect({
   onGoalArrive,
   onRecycleArrive,
 }) {
+  const targetCount = Math.max(0, (effect.targetTileIds?.size ?? 1) - 1);
+
+  await new Promise((resolve) => {
+    tileView.primeBombTile(effect.originTileId, {
+      duration: BOMB_PRIME_DURATION,
+      maxScale: Math.min(1.36, 1.24 + targetCount * 0.005),
+      onArrive: resolve,
+    });
+  });
+
   const originRect = tileView.getTileRect(effect.originTileId);
+  const boardMetrics = tileView.getBoardMetrics();
+  const shockwaveMaxRadius = boardMetrics
+    ? BOMB_BLAST_RADIUS_CELLS * boardMetrics.span + boardMetrics.tileSize * 0.5
+    : null;
+
+  tileView.playBombExplosion(originRect, {
+    strength: Math.min(2.1, 1 + targetCount / 18),
+    maxRadius: shockwaveMaxRadius,
+  });
 
   tileView.popTile(effect.originTileId, {
     duration: BOMB_POP_DURATION,
@@ -360,7 +382,7 @@ async function animateBombEffect({
       continue;
     }
 
-    const delay = Math.max(
+    const delay = BOMB_IMPACT_HOLD + Math.max(
       0,
       (Math.abs(targetTile.x - effect.originX) + Math.abs(targetTile.y - effect.originY)) * BOMB_TARGET_STAGGER,
     );
@@ -405,7 +427,7 @@ async function animateBombEffect({
     }));
   }
 
-  await wait(BOMB_POP_DURATION + BOMB_TARGET_STAGGER * 4);
+  await wait(BOMB_IMPACT_HOLD + BOMB_POP_DURATION + BOMB_TARGET_STAGGER * 4);
 
   queueSpecialChargeParticles({
     tileView,
