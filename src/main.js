@@ -1364,7 +1364,12 @@ export function initialize(doc = globalThis.document) {
   }
 
   async function resolveEndgameChain(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds) {
-    const specialChain = collectSpecialChain(tile, columns, rows);
+    const suppressedSpecialIds = new Set(
+      collectAllBoardTiles()
+        .filter((candidate) => candidate.id !== tile.id && isHiveTile(candidate))
+        .map((candidate) => candidate.id),
+    );
+    const specialChain = collectSpecialChain(tile, columns, rows, { suppressedSpecialIds });
     const result = applyRemovalsAndCollapse({
       board: state.board,
       tilesToRemove: specialChain.tilesToRemove,

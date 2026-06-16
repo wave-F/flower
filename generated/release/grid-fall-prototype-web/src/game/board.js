@@ -165,6 +165,10 @@ export function applyRemovalsAndCollapse({
 }
 
 function pickMatchSpecialTile(group, specialCreationContext) {
+  if (specialCreationContext?.allowSpecialCreation === false) {
+    return null;
+  }
+
   if (group.length < FOUR_MATCH_SIZE || group.some((tile) => tile.special)) {
     return null;
   }
