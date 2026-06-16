@@ -7,6 +7,12 @@ const LIGHTBALL_LINK_DURATION = 280;
 const LIGHTBALL_LINK_STAGGER = 54;
 const LIGHTBALL_TARGET_HOLD = 140;
 const LIGHTBALL_CLEAR_DURATION = 200;
+const DUAL_LIGHTBALL_CHARGE_DURATION = 150;
+const DUAL_LIGHTBALL_ORBIT_DURATION = 340;
+const DUAL_LIGHTBALL_FLASH_DURATION = 260;
+const DUAL_LIGHTBALL_SHOCKWAVE_DURATION = 320;
+const DUAL_LIGHTBALL_POP_DURATION = 180;
+const DUAL_LIGHTBALL_WAVE_STAGGER = 14;
 const BOMB_POP_DURATION = 220;
 const BOMB_TARGET_STAGGER = 34;
 const SPECIAL_CHARGE_PARTICLE_DURATION = 420;
@@ -427,6 +433,22 @@ async function animateHiveEffect({
   onGoalArrive,
   onRecycleArrive,
 }) {
+  if (hiveEffect.mode === "dualBoardBurst") {
+    await animateDualHiveEffect({
+      result,
+      hiveEffect,
+      animatedTileIds,
+      goalFlights,
+      recycleFlights,
+      tileView,
+      flyDuration,
+      isGoalTile,
+      getGoalRect,
+      onGoalArrive,
+    });
+    return;
+  }
+
   const targetTileIds = hiveEffect.targetTileIds ?? new Set();
   const targets = result.removedTiles
     .filter((tile) => targetTileIds.has(tile.id))
@@ -492,6 +514,102 @@ async function animateHiveEffect({
   });
 
   await Promise.all([originClear, ...targetClears]);
+}
+
+async function animateDualHiveEffect({
+  result,
+  hiveEffect,
+  animatedTileIds,
+  goalFlights,
+  recycleFlights,
+  tileView,
+  flyDuration,
+  isGoalTile,
+  getGoalRect,
+  onGoalArrive,
+}) {
+  const fusionCenterX = (hiveEffect.originX + hiveEffect.secondaryX) / 2;
+  const fusionCenterY = (hiveEffect.originY + hiveEffect.secondaryY) / 2;
+  const targetTileIds = hiveEffect.targetTileIds ?? new Set();
+  const targets = result.removedTiles
+    .filter((tile) => targetTileIds.has(tile.id))
+    .sort((a, b) => {
+      const distanceA = Math.abs(a.x - fusionCenterX) + Math.abs(a.y - fusionCenterY);
+      const distanceB = Math.abs(b.x - fusionCenterX) + Math.abs(b.y - fusionCenterY);
+      return distanceA - distanceB || a.y - b.y || a.x - b.x;
+    });
+
+  tileView.setLightballChargeState(hiveEffect.originTileId, true);
+  tileView.setLightballChargeState(hiveEffect.secondaryTileId, true);
+
+  await Promise.all([
+    new Promise((resolve) => tileView.pulseTile(hiveEffect.originTileId, {
+      duration: DUAL_LIGHTBALL_CHARGE_DURATION,
+      scaleMultiplier: 1.16,
+      onArrive: resolve,
+    })),
+    new Promise((resolve) => tileView.pulseTile(hiveEffect.secondaryTileId, {
+      duration: DUAL_LIGHTBALL_CHARGE_DURATION,
+      scaleMultiplier: 1.16,
+      onArrive: resolve,
+    })),
+  ]);
+
+  await new Promise((resolve) => {
+    tileView.orbitTilesIntoFusion(hiveEffect.originTileId, hiveEffect.secondaryTileId, {
+      duration: DUAL_LIGHTBALL_ORBIT_DURATION,
+      turns: 0.96,
+      clockwise: hiveEffect.originX <= hiveEffect.secondaryX,
+      endScale: 0.9,
+      flareDuration: 170,
+      onArrive: resolve,
+    });
+  });
+
+  const fusionRect = tileView.getTileRect(hiveEffect.originTileId);
+
+  tileView.clearLightballFxState(hiveEffect.originTileId);
+  tileView.clearLightballFxState(hiveEffect.secondaryTileId);
+
+  await Promise.all([
+    new Promise((resolve) => tileView.playBoardShockwave({
+      rect: fusionRect,
+      duration: DUAL_LIGHTBALL_SHOCKWAVE_DURATION,
+      onArrive: resolve,
+    })),
+    new Promise((resolve) => tileView.playBoardFlash({
+      duration: DUAL_LIGHTBALL_FLASH_DURATION,
+      onArrive: resolve,
+    })),
+  ]);
+
+  const flightTargets = [
+    result.removedTiles.find((tile) => tile.id === hiveEffect.originTileId),
+    ...targets,
+  ].filter(Boolean);
+
+  for (const [index, tile] of flightTargets.entries()) {
+    animatedTileIds.add(tile.id);
+    const queue = isGoalTile?.(tile) ? goalFlights : recycleFlights;
+    queue.push(new Promise((resolve) => {
+      setTimeout(() => {
+        tileView.flyTile(tile.id, {
+          duration: flyDuration,
+          targetRect: isGoalTile?.(tile)
+            ? getGoalRect?.(tile.kind.key) ?? null
+            : null,
+          onArrive: () => {
+            if (isGoalTile?.(tile)) {
+              onGoalArrive?.(tile);
+            }
+            resolve();
+          },
+        });
+      }, index * DUAL_LIGHTBALL_WAVE_STAGGER);
+    }));
+  }
+
+  await wait(DUAL_LIGHTBALL_POP_DURATION + Math.max(0, flightTargets.length - 1) * DUAL_LIGHTBALL_WAVE_STAGGER);
 }
 
 function getWindmillTotalDuration(timings) {

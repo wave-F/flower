@@ -99,6 +99,7 @@ export function initialize(doc = globalThis.document) {
   elements.debugWindmillButtonElement.addEventListener("click", onDebugWindmillButtonClick);
   elements.debugBombButtonElement.addEventListener("click", onDebugBombButtonClick);
   elements.debugHiveButtonElement.addEventListener("click", onDebugHiveButtonClick);
+  elements.debugDualHiveButtonElement.addEventListener("click", onDebugDualHiveButtonClick);
   elements.debugLevelPickerButtonElement.addEventListener("click", onDebugLevelPickerButtonClick);
   elements.debugLevelJumpButtonElement.addEventListener("click", onDebugLevelJumpButtonClick);
   window.addEventListener("resize", onViewportResize);
@@ -416,22 +417,28 @@ export function initialize(doc = globalThis.document) {
     const chargePercent = displayedCharge / RECYCLE_HIVE_THRESHOLD;
 
     let meterElement = elements.collectionTrayElement.querySelector(".energy-meter");
-    let fillElement = meterElement?.querySelector(".energy-meter-fill") ?? null;
+    let coreElement = meterElement?.querySelector(".energy-meter-core") ?? null;
 
-    if (!meterElement || !fillElement) {
+    if (!meterElement || !coreElement) {
       elements.collectionTrayElement.innerHTML = "";
       meterElement = document.createElement("div");
       meterElement.className = "energy-meter";
       meterElement.setAttribute("aria-hidden", "true");
 
-      fillElement = document.createElement("span");
-      fillElement.className = "energy-meter-fill";
+      const ringElement = document.createElement("span");
+      ringElement.className = "energy-meter-ring";
 
-      meterElement.appendChild(fillElement);
+      const orbGlowElement = document.createElement("span");
+      orbGlowElement.className = "energy-meter-orb-glow";
+
+      coreElement = document.createElement("span");
+      coreElement.className = "energy-meter-core";
+
+      meterElement.append(ringElement, orbGlowElement, coreElement);
       elements.collectionTrayElement.appendChild(meterElement);
     }
 
-    fillElement.style.width = `${chargePercent * 100}%`;
+    meterElement.style.setProperty("--charge-progress", String(chargePercent));
     elements.collectionTrayElement.setAttribute("aria-label", `当前光球能量 ${displayedCharge} / ${RECYCLE_HIVE_THRESHOLD}`);
     elements.collectionTrayCountElement.textContent = `${displayedCharge} / ${RECYCLE_HIVE_THRESHOLD}`;
   }
@@ -552,10 +559,9 @@ export function initialize(doc = globalThis.document) {
   }
 
   function getRecycleSourceRect() {
-    const fillElement = elements.collectionTrayElement.querySelector(".energy-meter-fill");
-    const fillRect = fillElement?.getBoundingClientRect() ?? null;
-    if (fillRect && fillRect.width >= 12 && fillRect.height >= 8) {
-      return fillRect;
+    const coreRect = getRecycleCoreRect();
+    if (coreRect) {
+      return coreRect;
     }
 
     return elements.collectionTrayElement.getBoundingClientRect();
@@ -567,22 +573,23 @@ export function initialize(doc = globalThis.document) {
       return getRecycleSourceRect();
     }
 
-    const fillRect = elements.collectionTrayElement.querySelector(".energy-meter-fill")?.getBoundingClientRect() ?? null;
-    const targetWidth = 10;
-    const inset = 4;
-    const minLeft = meterRect.left + inset;
-    const maxLeft = meterRect.right - inset - targetWidth;
-    const progressRight = fillRect && fillRect.width > 1 ? fillRect.right : meterRect.left + inset;
-    const left = Math.max(minLeft, Math.min(progressRight - targetWidth / 2, maxLeft));
+    const coreRect = getRecycleCoreRect();
+    if (coreRect) {
+      return coreRect;
+    }
 
     return {
-      left,
+      left: meterRect.left,
       top: meterRect.top,
-      width: targetWidth,
+      width: meterRect.width,
       height: meterRect.height,
-      right: left + targetWidth,
+      right: meterRect.right,
       bottom: meterRect.bottom,
     };
+  }
+
+  function getRecycleCoreRect() {
+    return elements.collectionTrayElement.querySelector(".energy-meter-core")?.getBoundingClientRect() ?? null;
   }
 
   function createRecycleGoalProgressSnapshot() {
@@ -920,6 +927,13 @@ export function initialize(doc = globalThis.document) {
   }
 
   async function processHive(tile) {
+    const { columns, rows } = getCurrentLevelSettings();
+    const adjacentHive = findAdjacentHivePartner(tile, columns, rows);
+    if (adjacentHive) {
+      await processDualHive(tile, adjacentHive);
+      return;
+    }
+
     const selectedKindKey = pickRandomBoardFlowerKind();
     if (!selectedKindKey) {
       hudView.setStatus("光球待命", "当前场上没有可清除的花色");
@@ -937,7 +951,7 @@ export function initialize(doc = globalThis.document) {
     renderHud();
     tileView.syncInteractivity();
 
-    const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
+    const { moveLimit, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: tile.x, y: tile.y };
     const targetKindName = TILE_KIND_MAP[selectedKindKey]?.name ?? selectedKindKey;
 
@@ -1034,6 +1048,122 @@ export function initialize(doc = globalThis.document) {
       hudView.setStatus("就绪", `光球触发后出现 ${cascadeResult.cascadeCount} 次后续消除${recycleStatusSuffix}`);
     } else {
       hudView.setStatus("就绪", `光球清除了 ${targetKindName}${recycleStatusSuffix}`);
+    }
+  }
+
+  async function processDualHive(primaryTile, secondaryTile) {
+    state.isProcessing = true;
+    state.movesUsed += 1;
+    renderHud();
+    tileView.syncInteractivity();
+
+    const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
+    const clickedCell = { x: primaryTile.x, y: primaryTile.y };
+    const tilesToRemove = collectAllBoardTiles();
+
+    showSpecialChainToast(2);
+    hudView.setStatus(
+      "双光球共鸣",
+      `相邻光球引爆全盘，清除 ${tilesToRemove.length} 个格子，还剩 ${getRemainingMoves(state, moveLimit)} 步`,
+    );
+
+    const result = applyRemovalsAndCollapse({
+      board: state.board,
+      tilesToRemove,
+      tileGroups: [tilesToRemove],
+      columns,
+      rows,
+      state,
+      tileKinds,
+      specialCreationContext: { allowSpecialCreation: false },
+      isHole,
+    });
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
+    result.hiveEffects = [
+      {
+        type: HIVE_TYPE,
+        mode: "dualBoardBurst",
+        originTileId: primaryTile.id,
+        secondaryTileId: secondaryTile.id,
+        originX: primaryTile.x,
+        originY: primaryTile.y,
+        secondaryX: secondaryTile.x,
+        secondaryY: secondaryTile.y,
+        triggeredByTileId: null,
+        targetTileIds: new Set(
+          tilesToRemove
+            .filter((candidate) => candidate.id !== primaryTile.id && candidate.id !== secondaryTile.id)
+            .map((candidate) => candidate.id),
+        ),
+      },
+    ];
+    const resolution = await animateResolution({
+      result,
+      tileView,
+      removeDuration: REMOVE_DURATION,
+      fallDuration: FALL_DURATION,
+      flyDuration: FLY_DURATION,
+      isGoalTile: (candidate) => initialRemovedTileResolution.goalTileIds.has(candidate.id),
+      getSpecialChargeCount: createSpecialChargeCounter(),
+      getGoalRect: hudView.getGoalSwatchRect,
+      getRecycleRect: getRecycleTargetRect,
+      onGoalArrive: handleGoalArrive,
+      onRecycleArrive: handleRecycleArrive,
+    });
+
+    const cascadeResult = await resolveBoardMatches("双光球", {
+      clickedCell,
+      previousResult: result,
+      recycleGoalProgress,
+    });
+    await Promise.all([
+      resolution.goalFlights,
+      resolution.recycleFlights,
+      ...cascadeResult.goalFlights,
+      ...cascadeResult.recycleFlights,
+    ]);
+
+    const initialChargeGain = calculateSpecialChargeGain(result);
+    const recycleResult = await resolveRecycleProgress(initialChargeGain + cascadeResult.recycleChargeGain);
+
+    if (isCurrentLevelComplete(state, getCurrentLevel())) {
+      state.isLevelCompleted = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
+      hudView.showLevelOverlay({
+        title: "关卡完成",
+        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    if (state.movesUsed >= moveLimit) {
+      state.isLevelFailed = true;
+      state.isProcessing = false;
+      tileView.syncInteractivity();
+      renderHud();
+      hudView.setStatus("步数用尽", `${getCurrentLevelLabel()} 未完成目标，点击重试本关`);
+      hudView.showLevelOverlay({
+        title: "步数用尽",
+        detail: `${getCurrentLevelLabel()} 未完成目标`,
+        actionLabel: getActionButtonLabel(),
+      });
+      return;
+    }
+
+    state.isProcessing = false;
+    tileView.syncInteractivity();
+    renderHud();
+
+    const recycleStatusSuffix = createRecycleStatusSuffix(recycleResult);
+    if (cascadeResult.cascadeCount > 0) {
+      hudView.setStatus("就绪", `双光球爆炸后出现 ${cascadeResult.cascadeCount} 次后续消除${recycleStatusSuffix}`);
+    } else {
+      hudView.setStatus("就绪", `双光球清空全盘${recycleStatusSuffix}`);
     }
   }
 
@@ -1257,6 +1387,31 @@ export function initialize(doc = globalThis.document) {
     hudView.setStatus("测试光球", `已在 ${columnLabel(target.x)} 列 ${target.y + 1} 行生成光球`);
   }
 
+  function onDebugDualHiveButtonClick() {
+    if (state.isProcessing || state.isLevelCompleted || state.isLevelFailed) {
+      return;
+    }
+
+    const { columns, rows } = getCurrentLevelSettings();
+    const pair = pickAdjacentReplaceableHivePair(columns, rows);
+    if (!pair) {
+      hudView.setStatus("测试双光球", "当前没有可替换的相邻普通花");
+      return;
+    }
+
+    for (const tile of pair) {
+      tile.kind = HIVE_KIND;
+      tile.special = { type: HIVE_TYPE };
+      tileView.updateTile(tile);
+    }
+
+    const [firstTile, secondTile] = pair;
+    hudView.setStatus(
+      "测试双光球",
+      `已在 ${columnLabel(firstTile.x)} 列 ${firstTile.y + 1} 行 与 ${columnLabel(secondTile.x)} 列 ${secondTile.y + 1} 行生成相邻光球`,
+    );
+  }
+
   function onDebugBombButtonClick() {
     if (state.isProcessing || state.isLevelCompleted || state.isLevelFailed) {
       return;
@@ -1312,6 +1467,22 @@ export function initialize(doc = globalThis.document) {
     return tiles;
   }
 
+  function collectAllBoardTiles() {
+    const { columns, rows } = getCurrentLevelSettings();
+    const tiles = [];
+
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < columns; x += 1) {
+        const tile = state.board[y]?.[x] ?? null;
+        if (tile) {
+          tiles.push(tile);
+        }
+      }
+    }
+
+    return tiles;
+  }
+
   function pickRandomReplaceableTile(columns, rows) {
     const flowerTiles = [];
     const fallbackTiles = [];
@@ -1334,6 +1505,35 @@ export function initialize(doc = globalThis.document) {
     return candidates[Math.floor(Math.random() * candidates.length)] ?? null;
   }
 
+  function pickAdjacentReplaceableHivePair(columns, rows) {
+    const pairs = [];
+
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < columns; x += 1) {
+        const tile = state.board[y]?.[x] ?? null;
+        if (!tile || tile.special) {
+          continue;
+        }
+
+        const rightTile = state.board[y]?.[x + 1] ?? null;
+        if (rightTile && !rightTile.special) {
+          pairs.push([tile, rightTile]);
+        }
+
+        const downTile = state.board[y + 1]?.[x] ?? null;
+        if (downTile && !downTile.special) {
+          pairs.push([tile, downTile]);
+        }
+      }
+    }
+
+    if (pairs.length === 0) {
+      return null;
+    }
+
+    return pairs[Math.floor(Math.random() * pairs.length)] ?? null;
+  }
+
   function findAdjacentWindmillPartner(tile, columns, rows) {
     const neighborOffsets = [
       { x: -1, y: 0 },
@@ -1351,6 +1551,30 @@ export function initialize(doc = globalThis.document) {
 
       const neighbor = state.board[nextY]?.[nextX] ?? null;
       if (isWindmillTile(neighbor)) {
+        return neighbor;
+      }
+    }
+
+    return null;
+  }
+
+  function findAdjacentHivePartner(tile, columns, rows) {
+    const neighborOffsets = [
+      { x: -1, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: 0, y: 1 },
+    ];
+
+    for (const offset of neighborOffsets) {
+      const nextX = tile.x + offset.x;
+      const nextY = tile.y + offset.y;
+      if (nextX < 0 || nextX >= columns || nextY < 0 || nextY >= rows) {
+        continue;
+      }
+
+      const neighbor = state.board[nextY]?.[nextX] ?? null;
+      if (neighbor && neighbor.id !== tile.id && isHiveTile(neighbor)) {
         return neighbor;
       }
     }

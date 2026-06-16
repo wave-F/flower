@@ -21,6 +21,7 @@
       <button id="debugWindmillButton" class="debug-button debug-button--windmill" type="button">测试风车</button>
       <button id="debugBombButton" class="debug-button debug-button--bomb" type="button">测试炸弹</button>
       <button id="debugHiveButton" class="debug-button debug-button--hive" type="button">测试光球</button>
+      <button id="debugDualHiveButton" class="debug-button debug-button--hive" type="button">双光球</button>
       <button id="debugLevelPickerButton" class="debug-button debug-button--level" type="button" aria-expanded="false" aria-controls="debugLevelPanel">选关</button>
       <div id="debugLevelPanel" class="debug-level-panel" hidden>
         <label class="debug-level-label" for="debugLevelSelect">跳转关卡</label>
@@ -57,11 +58,8 @@
             <div id="board" class="board" aria-label="game board"></div>
             <div id="tileLayer" class="tile-layer" aria-hidden="true"></div>
           </div>
-          <section class="collection-tray-panel" aria-labelledby="collectionTrayTitle">
-            <div class="collection-tray-header">
-              <h2 id="collectionTrayTitle" class="collection-tray-title">能量回收</h2>
-              <span id="collectionTrayCount" class="collection-tray-count">0 / 20</span>
-            </div>
+          <section class="collection-tray-panel" aria-label="能量回收">
+            <span id="collectionTrayCount" class="collection-tray-count" hidden>0 / 20</span>
             <div id="collectionTray" class="collection-tray" aria-label="底部能量槽"></div>
           </section>
           <div id="tutorialGuide" class="tutorial-guide" aria-hidden="true" hidden>

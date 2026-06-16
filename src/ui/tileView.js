@@ -417,6 +417,137 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     });
   }
 
+  function orbitTilesIntoFusion(
+    primaryTileId,
+    secondaryTileId,
+    {
+      duration = 320,
+      turns = 0.92,
+      clockwise = true,
+      endScale = 0.88,
+      flareDuration = 160,
+      onArrive,
+    } = {},
+  ) {
+    const primaryElement = tileElements.get(primaryTileId);
+    const secondaryElement = tileElements.get(secondaryTileId);
+    if (!primaryElement || !secondaryElement) {
+      onArrive?.();
+      return;
+    }
+
+    const primaryRect = liftTileToFlyLayer(primaryElement);
+    const secondaryRect = liftTileToFlyLayer(secondaryElement);
+    tileElements.delete(secondaryTileId);
+
+    const primaryStart = {
+      x: primaryRect.left + primaryRect.width / 2,
+      y: primaryRect.top + primaryRect.height / 2,
+    };
+    const secondaryStart = {
+      x: secondaryRect.left + secondaryRect.width / 2,
+      y: secondaryRect.top + secondaryRect.height / 2,
+    };
+    const center = {
+      x: (primaryStart.x + secondaryStart.x) / 2,
+      y: (primaryStart.y + secondaryStart.y) / 2,
+    };
+    const primaryStartAngle = Math.atan2(primaryStart.y - center.y, primaryStart.x - center.x);
+    const secondaryStartAngle = Math.atan2(secondaryStart.y - center.y, secondaryStart.x - center.x);
+    const primaryRadius = Math.hypot(primaryStart.x - center.x, primaryStart.y - center.y);
+    const secondaryRadius = Math.hypot(secondaryStart.x - center.x, secondaryStart.y - center.y);
+    const rotationDirection = clockwise ? 1 : -1;
+    const totalAngle = Math.PI * 2 * turns * rotationDirection;
+    const startTime = performance.now();
+    let animationFrame = 0;
+    let settled = false;
+
+    const updateOrbitalState = (element, rect, angle, radius, scale, opacity) => {
+      const currentCenterX = center.x + Math.cos(angle) * radius;
+      const currentCenterY = center.y + Math.sin(angle) * radius;
+      element.style.left = `${currentCenterX - rect.width / 2}px`;
+      element.style.top = `${currentCenterY - rect.height / 2}px`;
+      element.style.transform = `scale(${scale})`;
+      element.style.opacity = String(opacity);
+    };
+
+    const playFusionFlare = () => {
+      const flareSize = Math.max(primaryRect.width, secondaryRect.width) * 1.6;
+      const flareElement = document.createElement("span");
+      flareElement.style.position = "fixed";
+      flareElement.style.left = `${center.x - flareSize / 2}px`;
+      flareElement.style.top = `${center.y - flareSize / 2}px`;
+      flareElement.style.width = `${flareSize}px`;
+      flareElement.style.height = `${flareSize}px`;
+      flareElement.style.borderRadius = "50%";
+      flareElement.style.pointerEvents = "none";
+      flareElement.style.zIndex = "73";
+      flareElement.style.background = "radial-gradient(circle, rgba(255, 255, 255, 0.96) 0 14%, rgba(255, 243, 201, 0.64) 28%, rgba(255, 185, 96, 0.18) 56%, rgba(255, 185, 96, 0) 74%)";
+      flareElement.style.boxShadow = "0 0 20px rgba(255, 244, 211, 0.86), 0 0 42px rgba(255, 201, 125, 0.34)";
+      flareElement.style.opacity = "0";
+      flyLayerElement.appendChild(flareElement);
+
+      const flareAnimation = flareElement.animate([
+        { opacity: 0, transform: "scale(0.18)" },
+        { opacity: 1, transform: "scale(1)", offset: 0.34 },
+        { opacity: 0, transform: "scale(1.18)" },
+      ], {
+        duration: flareDuration,
+        easing: "cubic-bezier(0.16, 0.84, 0.22, 1)",
+        fill: "both",
+      });
+
+      flareAnimation.finished.then(() => {
+        flareAnimation.cancel();
+        flareElement.remove();
+      }).catch(() => {
+        flareElement.remove();
+      });
+    };
+
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cancelAnimationFrame(animationFrame);
+      primaryElement.style.left = `${center.x - primaryRect.width / 2}px`;
+      primaryElement.style.top = `${center.y - primaryRect.height / 2}px`;
+      primaryElement.style.transform = "scale(1)";
+      primaryElement.style.opacity = "1";
+      playFusionFlare();
+      releaseTileElement(secondaryElement);
+      onArrive?.();
+    };
+
+    const step = (now) => {
+      const rawProgress = Math.min(1, (now - startTime) / duration);
+      const progress = easeInOutCubic(rawProgress);
+      const angleOffset = totalAngle * progress;
+      const radiusProgress = progress * progress;
+      const primaryCurrentRadius = lerp(primaryRadius, 0, radiusProgress);
+      const secondaryCurrentRadius = lerp(secondaryRadius, 0, radiusProgress);
+      const baseScale = lerp(1, endScale, progress);
+      const primaryScale = rawProgress > 0.82 ? lerp(baseScale, 1.16, (rawProgress - 0.82) / 0.18) : baseScale;
+      const secondaryScale = rawProgress > 0.74 ? lerp(baseScale, 0.16, (rawProgress - 0.74) / 0.26) : baseScale;
+      const secondaryOpacity = rawProgress > 0.72 ? Math.max(0, 1 - (rawProgress - 0.72) / 0.28) : 1;
+
+      updateOrbitalState(primaryElement, primaryRect, primaryStartAngle + angleOffset, primaryCurrentRadius, primaryScale, 1);
+      updateOrbitalState(secondaryElement, secondaryRect, secondaryStartAngle + angleOffset, secondaryCurrentRadius, secondaryScale, secondaryOpacity);
+
+      if (rawProgress >= 1) {
+        finish();
+        return;
+      }
+
+      animationFrame = requestAnimationFrame(step);
+    };
+
+    animationFrame = requestAnimationFrame(step);
+    setTimeout(finish, duration + flareDuration + 80);
+  }
+
   function pulseTile(tileId, { duration = 120, scaleMultiplier = 1.34, onArrive } = {}) {
     const element = tileElements.get(tileId);
     if (!element) {
@@ -440,6 +571,97 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
       onArrive?.();
     }).catch(() => {
       element.style.removeProperty("transform");
+      onArrive?.();
+    });
+  }
+
+  function playBoardFlash({ duration = 240, maxOpacity = 0.96, onPeak, onArrive } = {}) {
+    const flashElement = document.createElement("span");
+    flashElement.style.position = "absolute";
+    flashElement.style.inset = "0";
+    flashElement.style.zIndex = "72";
+    flashElement.style.pointerEvents = "none";
+    flashElement.style.opacity = "0";
+    flashElement.style.background = [
+      "radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.56) 28%, rgba(255, 239, 197, 0.18) 54%, rgba(255, 239, 197, 0) 76%)",
+      "linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 222, 0.62))",
+    ].join(",");
+    flyLayerElement.appendChild(flashElement);
+
+    const peakDelay = Math.max(40, duration * 0.24);
+    const peakTimeout = setTimeout(() => {
+      onPeak?.();
+    }, peakDelay);
+    const animation = flashElement.animate([
+      { opacity: 0 },
+      { opacity: maxOpacity, offset: 0.22 },
+      { opacity: maxOpacity * 0.34, offset: 0.6 },
+      { opacity: 0 },
+    ], {
+      duration,
+      easing: "cubic-bezier(0.18, 0.92, 0.22, 1)",
+      fill: "both",
+    });
+
+    animation.finished.then(() => {
+      clearTimeout(peakTimeout);
+      animation.cancel();
+      flashElement.remove();
+      onArrive?.();
+    }).catch(() => {
+      clearTimeout(peakTimeout);
+      flashElement.remove();
+      onArrive?.();
+    });
+  }
+
+  function playBoardShockwave({ rect, duration = 320, sizeMultiplier = 7.2, onPeak, onArrive } = {}) {
+    if (!rect) {
+      onPeak?.();
+      onArrive?.();
+      return;
+    }
+
+    const size = Math.max(260, Math.min(960, Math.max(rect.width, rect.height) * sizeMultiplier));
+    const shockwaveElement = document.createElement("span");
+    shockwaveElement.style.position = "fixed";
+    shockwaveElement.style.left = `${rect.left + rect.width / 2}px`;
+    shockwaveElement.style.top = `${rect.top + rect.height / 2}px`;
+    shockwaveElement.style.width = `${size}px`;
+    shockwaveElement.style.height = `${size}px`;
+    shockwaveElement.style.marginLeft = `${size * -0.5}px`;
+    shockwaveElement.style.marginTop = `${size * -0.5}px`;
+    shockwaveElement.style.borderRadius = "50%";
+    shockwaveElement.style.pointerEvents = "none";
+    shockwaveElement.style.zIndex = "71";
+    shockwaveElement.style.opacity = "0";
+    shockwaveElement.style.background = "radial-gradient(circle, rgba(255, 255, 255, 0.82) 0 5%, rgba(255, 244, 209, 0.3) 14%, rgba(255, 183, 116, 0.18) 32%, rgba(255, 183, 116, 0) 64%)";
+    shockwaveElement.style.boxShadow = "0 0 34px rgba(255, 234, 186, 0.3), 0 0 84px rgba(255, 190, 116, 0.16)";
+    flyLayerElement.appendChild(shockwaveElement);
+
+    const peakDelay = Math.max(60, duration * 0.28);
+    const peakTimeout = setTimeout(() => {
+      onPeak?.();
+    }, peakDelay);
+    const animation = shockwaveElement.animate([
+      { opacity: 0, transform: "scale(0.08)" },
+      { opacity: 1, transform: "scale(0.26)", offset: 0.18 },
+      { opacity: 0.42, transform: "scale(0.74)", offset: 0.54 },
+      { opacity: 0, transform: "scale(1)" },
+    ], {
+      duration,
+      easing: "cubic-bezier(0.16, 0.84, 0.22, 1)",
+      fill: "both",
+    });
+
+    animation.finished.then(() => {
+      clearTimeout(peakTimeout);
+      animation.cancel();
+      shockwaveElement.remove();
+      onArrive?.();
+    }).catch(() => {
+      clearTimeout(peakTimeout);
+      shockwaveElement.remove();
       onArrive?.();
     });
   }
@@ -835,6 +1057,9 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     getBoardMetrics: getCurrentBoardMetrics,
     mergeTileIntoTile,
     mountSpawnedTile,
+    orbitTilesIntoFusion,
+    playBoardFlash,
+    playBoardShockwave,
     playLightningLinks,
     pulseTile,
     mountTileForEntry,

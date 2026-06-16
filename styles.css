@@ -786,7 +786,7 @@ body {
   width: calc(100% - 20px);
   max-width: calc(var(--board-pixel-width, 999px) + 36px);
   margin: 0 auto;
-  padding: 12px 14px 14px;
+  padding: 10px 14px 14px;
   border-radius: 24px;
   background:
     linear-gradient(180deg, rgba(255, 248, 239, 0.96), rgba(250, 226, 195, 0.94)),
@@ -799,7 +799,7 @@ body {
 .collection-tray-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   margin-bottom: 10px;
 }
@@ -815,29 +815,85 @@ body {
 
 .collection-tray {
   position: relative;
+  min-height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .energy-meter {
+  --charge-progress: 0;
+  --charge-angle: calc(var(--charge-progress) * 360deg);
   position: relative;
-  height: 14px;
-  overflow: hidden;
-  border-radius: 8px;
-  background: linear-gradient(180deg, rgba(252, 235, 213, 0.96), rgba(236, 208, 168, 0.96));
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(138, 88, 44, 0.98), rgba(110, 66, 29, 0.98));
   box-shadow:
-    inset 0 0 0 1px rgba(226, 170, 126, 0.84),
-    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+    inset 0 1px 0 rgba(255, 244, 210, 0.4),
+    0 8px 16px rgba(144, 87, 39, 0.18);
 }
 
-.energy-meter-fill {
+.energy-meter-ring {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  border-radius: 6px;
-  transition: width 180ms linear;
-  background: linear-gradient(90deg, rgba(255, 210, 96, 0.98), rgba(255, 146, 76, 0.98) 52%, rgba(231, 98, 58, 0.98));
+  inset: 0;
+  border-radius: 50%;
+  background:
+    conic-gradient(
+      from -90deg,
+      #ffd85a 0deg,
+      #ffb63c var(--charge-angle),
+      rgba(73, 42, 109, 0.28) var(--charge-angle),
+      rgba(73, 42, 109, 0.28) 360deg
+    );
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.34),
-    0 2px 8px rgba(235, 108, 62, 0.28);
+    inset 0 0 0 3px rgba(255, 238, 180, 0.42);
+}
+
+.energy-meter-ring::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(108, 63, 28, 0.98), rgba(90, 50, 21, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(255, 222, 140, 0.16);
+}
+
+.energy-meter-orb-glow {
+  position: absolute;
+  inset: 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 235, 150, 0.42) 0 30%, rgba(255, 193, 80, 0.18) 56%, rgba(255, 193, 80, 0) 78%);
+  filter: blur(5px);
+}
+
+.energy-meter-core {
+  position: absolute;
+  inset: 22px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(255, 248, 214, 0.82) 0 44%, rgba(255, 214, 111, 0.22) 66%, rgba(255, 222, 124, 0) 82%);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 247, 248, 0.72),
+    0 0 12px rgba(255, 225, 111, 0.4);
+}
+
+.energy-meter-core::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: center / contain no-repeat url("./assets/item_ball.png");
+  filter: drop-shadow(0 0 8px rgba(255, 223, 113, 0.52));
+}
+
+.energy-meter-core::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 34%);
+  pointer-events: none;
 }
 
 .reward-flyer {
@@ -1554,7 +1610,7 @@ body {
   }
 
   .collection-tray {
-    min-height: 16px;
+    min-height: 72px;
   }
 
   .collection-tray-title,
@@ -1563,7 +1619,16 @@ body {
   }
 
   .energy-meter {
-    height: 12px;
+    width: 74px;
+    height: 74px;
+  }
+
+  .energy-meter-orb-glow {
+    inset: 18px;
+  }
+
+  .energy-meter-core {
+    inset: 19px;
   }
 
 }

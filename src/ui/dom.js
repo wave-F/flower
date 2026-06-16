@@ -26,6 +26,7 @@ export function getDomElements(doc = document) {
     debugWindmillButtonElement: requireElement(doc, "#debugWindmillButton"),
     debugBombButtonElement: requireElement(doc, "#debugBombButton"),
     debugHiveButtonElement: requireElement(doc, "#debugHiveButton"),
+    debugDualHiveButtonElement: requireElement(doc, "#debugDualHiveButton"),
     debugLevelPickerButtonElement: requireElement(doc, "#debugLevelPickerButton"),
     debugLevelPanelElement: requireElement(doc, "#debugLevelPanel"),
     debugLevelSelectElement: requireElement(doc, "#debugLevelSelect"),
