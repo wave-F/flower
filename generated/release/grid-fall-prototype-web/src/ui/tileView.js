@@ -4,6 +4,7 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
   const tileElements = new Map();
   const tilePool = [];
   const brickElements = new Map();
+  const crateElements = new Map();
 
   function clearAllTiles() {
     for (const element of tileElements.values()) {
@@ -18,11 +19,16 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
       element.remove();
     }
 
+    for (const element of crateElements.values()) {
+      element.remove();
+    }
+
     brickElements.clear();
+    crateElements.clear();
     brickLayerElement?.replaceChildren();
   }
 
-  function renderBricks(bricks, metrics = getCurrentBoardMetrics()) {
+  function renderBricks(bricks, crates = new Map(), metrics = getCurrentBoardMetrics()) {
     clearBricks();
     if (!brickLayerElement) {
       return;
@@ -35,14 +41,29 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
       brickLayerElement.appendChild(element);
       brickElements.set(`${brick.x},${brick.y}`, element);
     }
+
+    for (const crate of crates.values()) {
+      const element = document.createElement("div");
+      element.className = `crate${crate.damage > 0 ? " crate--damaged" : ""}`;
+      setTileBoardPosition(element, crate.x, crate.y, metrics);
+      brickLayerElement.appendChild(element);
+      crateElements.set(`${crate.x},${crate.y}`, element);
+    }
   }
 
-  function refreshBrickPositions(bricks) {
+  function refreshBrickPositions(bricks, crates = new Map()) {
     const metrics = getCurrentBoardMetrics();
     for (const brick of bricks.values()) {
       const element = brickElements.get(`${brick.x},${brick.y}`);
       if (element) {
         setTileBoardPosition(element, brick.x, brick.y, metrics);
+      }
+    }
+
+    for (const crate of crates.values()) {
+      const element = crateElements.get(`${crate.x},${crate.y}`);
+      if (element) {
+        setTileBoardPosition(element, crate.x, crate.y, metrics);
       }
     }
   }

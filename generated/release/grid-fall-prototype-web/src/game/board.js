@@ -149,7 +149,13 @@ export function applyRemovalsAndCollapse({
     }
   }
 
-  const obstacleResult = applyObstacleDamage?.(removedTiles) ?? { damagedBricks: [], brokenBricks: [] };
+  const obstacleResult = applyObstacleDamage?.(removedTiles) ?? {
+    damagedBricks: [],
+    brokenBricks: [],
+    damagedCrates: [],
+    brokenCrates: [],
+  };
+
   const collapseResult = collapseBoard({ board, columns, rows, state, tileKinds, isBlocked, isHole });
 
   return {
@@ -159,6 +165,8 @@ export function applyRemovalsAndCollapse({
     triggeredSpecialTiles,
     damagedBricks: obstacleResult.damagedBricks,
     brokenBricks: obstacleResult.brokenBricks,
+    damagedCrates: obstacleResult.damagedCrates ?? [],
+    brokenCrates: obstacleResult.brokenCrates ?? [],
     dropped: collapseResult.dropped,
     spawned: collapseResult.spawned,
   };
@@ -220,7 +228,7 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
         continue;
       }
 
-      const source = findSourceCell(board, x, y, canOccupy);
+      const source = findSourceCell(board, x, y, canOccupy, isBlocked, isHole);
       if (source) {
         const tile = board[source.y][source.x];
         board[source.y][source.x] = null;
@@ -231,7 +239,7 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
         continue;
       }
 
-      if (isReachableFromTop(board, x, y, canOccupy)) {
+      if (isReachableFromTop(board, x, y, canOccupy, isBlocked, isHole)) {
         const tile = createTile(state, x, y, randomKind(tileKinds));
         board[y][x] = tile;
         spawned.push({ tile, fromRow: -1, toRow: y });
@@ -242,34 +250,47 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
   return { dropped, spawned };
 }
 
-function getPredecessorCells(board, x, y, canOccupy) {
+function getPredecessorCells(board, x, y, canOccupy, isBlocked, isHole) {
   if (y <= 0) {
     return [];
   }
 
+  const canTraverse = (cellX, cellY) => cellX >= 0 && cellX < board[0].length && cellY >= 0 && cellY < board.length && !isBlocked(cellX, cellY);
   const diagonalCandidates = (x + y) % 2 === 0
     ? [{ x: x - 1, y: y - 1 }, { x: x + 1, y: y - 1 }]
     : [{ x: x + 1, y: y - 1 }, { x: x - 1, y: y - 1 }];
 
-  const candidates = [{ x, y: y - 1 }];
+  const candidates = [];
+
+  if (canTraverse(x, y - 1)) {
+    candidates.push({ x, y: y - 1 });
+  }
+
+  if (isHole(x, y)) {
+    return candidates;
+  }
 
   for (const cell of diagonalCandidates) {
     if (!canOccupy(cell.x, cell.y)) {
       continue;
     }
 
-    if (canOccupy(cell.x, y) && !board[y]?.[cell.x]) {
+    if (isHole(cell.x, y)) {
+      continue;
+    }
+
+    if (hasVerticalSource(board, cell.x, y, canOccupy, isBlocked, isHole)) {
       continue;
     }
 
     candidates.push(cell);
   }
 
-  return candidates.filter((cell) => canOccupy(cell.x, cell.y));
+  return candidates;
 }
 
-function findSourceCell(board, targetX, targetY, canOccupy) {
-  const queue = getPredecessorCells(board, targetX, targetY, canOccupy).map((cell) => ({ ...cell }));
+function findSourceCell(board, targetX, targetY, canOccupy, isBlocked, isHole) {
+  const queue = getPredecessorCells(board, targetX, targetY, canOccupy, isBlocked, isHole).map((cell) => ({ ...cell }));
   const visited = new Set(queue.map((cell) => `${cell.x},${cell.y}`));
 
   while (queue.length > 0) {
@@ -279,7 +300,7 @@ function findSourceCell(board, targetX, targetY, canOccupy) {
       return cell;
     }
 
-    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy)) {
+    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy, isBlocked, isHole)) {
       const key = `${predecessor.x},${predecessor.y}`;
       if (visited.has(key)) {
         continue;
@@ -293,7 +314,29 @@ function findSourceCell(board, targetX, targetY, canOccupy) {
   return null;
 }
 
-function isReachableFromTop(board, targetX, targetY, canOccupy) {
+function hasVerticalSource(board, x, y, canOccupy, isBlocked, isHole) {
+  if (!canOccupy(x, y)) {
+    return false;
+  }
+
+  for (let scanY = y - 1; scanY >= 0; scanY -= 1) {
+    if (isBlocked(x, scanY)) {
+      return false;
+    }
+
+    if (isHole(x, scanY)) {
+      continue;
+    }
+
+    if (board[scanY]?.[x]) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isReachableFromTop(board, targetX, targetY, canOccupy, isBlocked, isHole) {
   if (!canOccupy(targetX, targetY)) {
     return false;
   }
@@ -307,7 +350,7 @@ function isReachableFromTop(board, targetX, targetY, canOccupy) {
       return true;
     }
 
-    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy)) {
+    for (const predecessor of getPredecessorCells(board, cell.x, cell.y, canOccupy, isBlocked, isHole)) {
       const key = `${predecessor.x},${predecessor.y}`;
       if (visited.has(key)) {
         continue;
