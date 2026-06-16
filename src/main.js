@@ -11,7 +11,7 @@ import {
 import { LEVELS } from "./config/levels.js";
 import { TILE_KIND_MAP } from "./config/tileKinds.js";
 import { applyRemovalsAndCollapse, createBoard, createFixedBoard, findTileById } from "./game/board.js";
-import { isCurrentLevelComplete, getRemainingMoves, isHoleCell, prepareLevelState } from "./game/levelProgress.js";
+import { applyBrickDamage, isBrickCell, isCurrentLevelComplete, getRemainingMoves, isHoleCell, prepareLevelState } from "./game/levelProgress.js";
 import { findMatchGroups } from "./game/match.js";
 import { createGameState } from "./state/gameState.js";
 import { columnLabel } from "./utils/grid.js";
@@ -34,7 +34,7 @@ const NUM_TO_TILE_KEY = {
 };
 
 const FIRST_LEVEL_TUTORIAL = {
-  levelId: 10,
+  levelId: 1,
   x: 2,
   y: 2,
   kind: "grass",
@@ -61,6 +61,7 @@ const HIVE_REPLACE_DURATION = 150;
 const HIVE_GROW_DURATION = 220;
 const HIVE_REWARD_FLIGHT_DURATION = 420;
 const ENABLE_TUTORIAL = false;
+const BRICK_ASSET_PATHS = ["./assets/brick.png", "./assets/brick_2.png"];
 
 export function initialize(doc = globalThis.document) {
   if (!doc) {
@@ -74,6 +75,7 @@ export function initialize(doc = globalThis.document) {
     appTitle: APP_TITLE,
   });
   const tileView = createTileView({
+    brickLayerElement: elements.brickLayerElement,
     tileLayerElement: elements.tileLayerElement,
     flyLayerElement: elements.flyLayerElement,
     boardElement: elements.boardElement,
@@ -86,6 +88,7 @@ export function initialize(doc = globalThis.document) {
   fitBoardToViewport({
     boardElement: elements.boardElement,
     boardShellElement: elements.boardShellElement,
+    brickLayerElement: elements.brickLayerElement,
     tileLayerElement: elements.tileLayerElement,
     columns: initialCols,
     rows: initialRows,
@@ -146,6 +149,14 @@ export function initialize(doc = globalThis.document) {
 
   function isHole(x, y) {
     return isHoleCell(state, x, y);
+  }
+
+  function isBrick(x, y) {
+    return isBrickCell(state, x, y);
+  }
+
+  function isBlocked(x, y) {
+    return isBrick(x, y);
   }
 
   function getCurrentLevelSettings() {
@@ -209,11 +220,13 @@ export function initialize(doc = globalThis.document) {
     fitBoardToViewport({
       boardElement: elements.boardElement,
       boardShellElement: elements.boardShellElement,
+      brickLayerElement: elements.brickLayerElement,
       tileLayerElement: elements.tileLayerElement,
       columns,
       rows,
     });
     renderBoardSlots({ boardElement: elements.boardElement, columns, rows, isHole });
+    tileView.refreshBrickPositions(state.bricks);
     tileView.refreshTilePositions(state.board, rows, columns);
     positionTutorialGuide();
   }
@@ -236,6 +249,7 @@ export function initialize(doc = globalThis.document) {
     fitBoardToViewport({
       boardElement: elements.boardElement,
       boardShellElement: elements.boardShellElement,
+      brickLayerElement: elements.brickLayerElement,
       tileLayerElement: elements.tileLayerElement,
       columns,
       rows,
@@ -248,12 +262,14 @@ export function initialize(doc = globalThis.document) {
     hudView.setStatus("入场中", "花朵从土里依次长出");
 
     tileView.clearAllTiles();
+    tileView.clearBricks();
     
     if (level.initialBoard) {
       state.board = createFixedBoard({
         state,
         layout: level.initialBoard,
         tileKindMap: TILE_KIND_MAP,
+        isBlocked,
         isHole,
       });
     } else {
@@ -263,9 +279,12 @@ export function initialize(doc = globalThis.document) {
         rows,
         tileKinds,
         maxAttempts: MAX_BOARD_GENERATION_ATTEMPTS,
+        isBlocked,
         isHole,
       });
     }
+
+    tileView.renderBricks(state.bricks);
 
     const entryMetrics = tileView.getBoardMetrics();
 
@@ -644,6 +663,8 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
+      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      isBlocked,
       isHole,
     });
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
@@ -660,6 +681,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
     const cascadeResult = await resolveBoardMatches("本次", {
@@ -751,6 +773,8 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
+      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      isBlocked,
       isHole,
     });
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
@@ -770,6 +794,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
     const cascadeResult = await resolveBoardMatches("大风车", {
@@ -850,6 +875,8 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
+      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      isBlocked,
       isHole,
     });
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
@@ -869,6 +896,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
     const cascadeResult = await resolveBoardMatches("风车", {
@@ -969,6 +997,8 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds,
       specialCreationContext: { allowSpecialCreation: false },
+      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      isBlocked,
       isHole,
     });
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
@@ -994,6 +1024,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
     const cascadeResult = await resolveBoardMatches("光球", {
@@ -1076,6 +1107,8 @@ export function initialize(doc = globalThis.document) {
       state,
       tileKinds,
       specialCreationContext: { allowSpecialCreation: false },
+      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      isBlocked,
       isHole,
     });
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
@@ -1110,6 +1143,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
     const cascadeResult = await resolveBoardMatches("双光球", {
@@ -1190,6 +1224,8 @@ export function initialize(doc = globalThis.document) {
       rows,
       state,
       tileKinds,
+      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      isBlocked,
       isHole,
     });
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
@@ -1209,6 +1245,7 @@ export function initialize(doc = globalThis.document) {
       getRecycleRect: getRecycleTargetRect,
       onGoalArrive: handleGoalArrive,
       onRecycleArrive: handleRecycleArrive,
+      onAfterRemoval: () => tileView.renderBricks(state.bricks),
     });
 
     const cascadeResult = await resolveBoardMatches("炸弹", {
@@ -1291,6 +1328,8 @@ export function initialize(doc = globalThis.document) {
         rows,
         state,
         tileKinds,
+        applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+        isBlocked,
         isHole,
         specialCreationContext: createSpecialCreationContext(previousResult, clickedCell),
       });
@@ -1309,6 +1348,7 @@ export function initialize(doc = globalThis.document) {
         getRecycleRect: getRecycleTargetRect,
         onGoalArrive: handleGoalArrive,
         onRecycleArrive: handleRecycleArrive,
+        onAfterRemoval: () => tileView.renderBricks(state.bricks),
       });
       goalFlights.push(resolution.goalFlights);
       recycleFlights.push(resolution.recycleFlights);
@@ -1858,6 +1898,12 @@ function collectFirstScreenAssetPaths() {
 
   if (!firstLevel) {
     return [...assetPaths];
+  }
+
+  if ((firstLevel.bricks?.length ?? 0) > 0) {
+    for (const assetPath of BRICK_ASSET_PATHS) {
+      assetPaths.add(assetPath);
+    }
   }
 
   for (const goal of firstLevel.goals ?? []) {

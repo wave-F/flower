@@ -1236,6 +1236,12 @@ function collectFirstScreenAssetPaths() {
     return [...assetPaths];
   }
 
+  if ((firstLevel.bricks?.length ?? 0) > 0) {
+    for (const assetPath of BRICK_ASSET_PATHS) {
+      assetPaths.add(assetPath);
+    }
+  }
+
   for (const goal of firstLevel.goals ?? []) {
     const key = normalizeTileKindKey(goal.kind);
     if (key) {

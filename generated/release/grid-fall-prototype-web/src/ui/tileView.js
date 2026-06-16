@@ -1,8 +1,9 @@
 import { getBoardMetrics } from "./boardLayout.js";
 
-export function createTileView({ tileLayerElement, flyLayerElement, boardElement, boardShellElement, getInteractionDisabled }) {
+export function createTileView({ brickLayerElement, tileLayerElement, flyLayerElement, boardElement, boardShellElement, getInteractionDisabled }) {
   const tileElements = new Map();
   const tilePool = [];
+  const brickElements = new Map();
 
   function clearAllTiles() {
     for (const element of tileElements.values()) {
@@ -10,6 +11,40 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     }
 
     tileElements.clear();
+  }
+
+  function clearBricks() {
+    for (const element of brickElements.values()) {
+      element.remove();
+    }
+
+    brickElements.clear();
+    brickLayerElement?.replaceChildren();
+  }
+
+  function renderBricks(bricks, metrics = getCurrentBoardMetrics()) {
+    clearBricks();
+    if (!brickLayerElement) {
+      return;
+    }
+
+    for (const brick of bricks.values()) {
+      const element = document.createElement("div");
+      element.className = `brick${brick.damage > 0 ? " brick--damaged" : ""}`;
+      setTileBoardPosition(element, brick.x, brick.y, metrics);
+      brickLayerElement.appendChild(element);
+      brickElements.set(`${brick.x},${brick.y}`, element);
+    }
+  }
+
+  function refreshBrickPositions(bricks) {
+    const metrics = getCurrentBoardMetrics();
+    for (const brick of bricks.values()) {
+      const element = brickElements.get(`${brick.x},${brick.y}`);
+      if (element) {
+        setTileBoardPosition(element, brick.x, brick.y, metrics);
+      }
+    }
   }
 
   function getTileElement(tileId) {
@@ -602,6 +637,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.style.removeProperty("opacity");
     element.style.removeProperty("transform");
     element.style.removeProperty("transition-delay");
+    element.style.removeProperty("--drop-duration");
     element.style.removeProperty("--tile-size");
     element.removeAttribute("aria-label");
     delete element.dataset.tileId;
@@ -647,6 +683,10 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.style.top = `${top}px`;
   }
 
+  function setDropDuration(element, duration) {
+    element.style.setProperty("--drop-duration", `${duration}ms`);
+  }
+
   function placeTileWithoutAnimation(element, left, top) {
     element.classList.add("no-transition");
     setTileStagePosition(element, left, top);
@@ -662,6 +702,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
 
   return {
     clearAllTiles,
+    clearBricks,
     burstTile,
     flyBee,
     flyTile,
@@ -673,9 +714,12 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     mountSpawnedTile,
     pulseTile,
     mountTileForEntry,
+    refreshBrickPositions,
     refreshTilePositions,
+    renderBricks,
     popTile,
     setWindmillFusionState,
+    setDropDuration,
     setTileBoardPosition,
     shrinkTile,
     syncInteractivity,

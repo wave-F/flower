@@ -1,4 +1,4 @@
-export function fitBoardToViewport({ boardElement, boardShellElement, tileLayerElement, columns, rows }) {
+export function fitBoardToViewport({ boardElement, boardShellElement, tileLayerElement, brickLayerElement = null, columns, rows }) {
   const shellWidth = boardShellElement.clientWidth || 360;
   const shellHeight = boardShellElement.clientHeight || 640;
   const gap = shellWidth <= 360 ? 4 : 6;
@@ -14,6 +14,8 @@ export function fitBoardToViewport({ boardElement, boardShellElement, tileLayerE
   boardElement.style.setProperty("--board-rows", String(rows));
   boardElement.style.setProperty("--gap", `${gap}px`);
   boardElement.style.setProperty("--tile-size", `${tileSize}px`);
+  brickLayerElement?.style.setProperty("--gap", `${gap}px`);
+  brickLayerElement?.style.setProperty("--tile-size", `${tileSize}px`);
   tileLayerElement.style.setProperty("--gap", `${gap}px`);
   tileLayerElement.style.setProperty("--tile-size", `${tileSize}px`);
   if (gameScreenElement) {
