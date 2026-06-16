@@ -11,6 +11,7 @@ export function getDomElements(doc = document) {
   return {
     boardElement: requireElement(doc, "#board"),
     boardShellElement: requireElement(doc, ".board-shell"),
+    brickLayerElement: requireElement(doc, "#brickLayer"),
     tileLayerElement: requireElement(doc, "#tileLayer"),
     flyLayerElement: requireElement(doc, "#flyLayer"),
     collectionTrayElement: requireElement(doc, "#collectionTray"),

@@ -776,6 +776,13 @@ body {
 .tile-layer {
   position: absolute;
   inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.brick-layer {
+  position: absolute;
+  inset: 0;
   z-index: 2;
   pointer-events: none;
 }
@@ -785,6 +792,19 @@ body {
   inset: 0;
   z-index: 4;
   pointer-events: none;
+}
+
+.brick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--tile-size);
+  height: var(--tile-size);
+  background: center / contain no-repeat url("./assets/brick.png");
+}
+
+.brick--damaged {
+  background-image: url("./assets/brick_2.png");
 }
 
 .collection-tray-panel {
@@ -1008,6 +1028,7 @@ body {
 .tile {
   --tile-scale: 1;
   --flower-image: url("./assets/flowers/flower_5.png");
+  --drop-duration: 500ms;
   position: absolute;
   pointer-events: auto;
   appearance: none;
@@ -1025,7 +1046,8 @@ body {
   cursor: pointer;
   transform: scale(var(--tile-scale));
   transition:
-    top 500ms cubic-bezier(0.18, 0.7, 0.28, 1),
+    left var(--drop-duration) cubic-bezier(0.18, 0.7, 0.28, 1),
+    top var(--drop-duration) cubic-bezier(0.18, 0.7, 0.28, 1),
     opacity 140ms ease,
     transform 140ms ease;
 }
@@ -1058,7 +1080,8 @@ body {
 
 .tile--special {
   transition:
-    top 500ms cubic-bezier(0.18, 0.7, 0.28, 1),
+    left var(--drop-duration) cubic-bezier(0.18, 0.7, 0.28, 1),
+    top var(--drop-duration) cubic-bezier(0.18, 0.7, 0.28, 1),
     opacity 220ms ease,
     transform 280ms cubic-bezier(0.18, 0.92, 0.22, 1);
 }

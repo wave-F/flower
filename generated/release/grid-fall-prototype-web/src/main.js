@@ -457,16 +457,7 @@ export function initialize(doc = globalThis.document) {
     ]);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
-      state.isLevelCompleted = true;
-      state.isProcessing = false;
-      tileView.syncInteractivity();
-      renderHud();
-      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
-      hudView.showLevelOverlay({
-        title: "关卡完成",
-        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
-        actionLabel: getActionButtonLabel(),
-      });
+      await completeLevelWithCleanup();
       return;
     }
 
@@ -550,16 +541,7 @@ export function initialize(doc = globalThis.document) {
     ]);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
-      state.isLevelCompleted = true;
-      state.isProcessing = false;
-      tileView.syncInteractivity();
-      renderHud();
-      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
-      hudView.showLevelOverlay({
-        title: "关卡完成",
-        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
-        actionLabel: getActionButtonLabel(),
-      });
+      await completeLevelWithCleanup();
       return;
     }
 
@@ -631,16 +613,7 @@ export function initialize(doc = globalThis.document) {
     ]);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
-      state.isLevelCompleted = true;
-      state.isProcessing = false;
-      tileView.syncInteractivity();
-      renderHud();
-      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
-      hudView.showLevelOverlay({
-        title: "关卡完成",
-        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
-        actionLabel: getActionButtonLabel(),
-      });
+      await completeLevelWithCleanup();
       return;
     }
 
@@ -712,16 +685,7 @@ export function initialize(doc = globalThis.document) {
     ]);
 
     if (isCurrentLevelComplete(state, getCurrentLevel())) {
-      state.isLevelCompleted = true;
-      state.isProcessing = false;
-      tileView.syncInteractivity();
-      renderHud();
-      hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
-      hudView.showLevelOverlay({
-        title: "关卡完成",
-        detail: `${getCurrentLevelLabel()} 已达成全部目标`,
-        actionLabel: getActionButtonLabel(),
-      });
+      await completeLevelWithCleanup();
       return;
     }
 
@@ -750,7 +714,7 @@ export function initialize(doc = globalThis.document) {
     }
   }
 
-  async function resolveBoardMatches(contextLabel, { clickedCell, previousResult = null } = {}) {
+  async function resolveBoardMatches(contextLabel, { clickedCell, previousResult = null, allowSpecialCreation = true } = {}) {
     let cascadeCount = 0;
     const goalFlights = [];
     const { columns, rows, tileKinds } = getCurrentLevelSettings();
@@ -774,7 +738,7 @@ export function initialize(doc = globalThis.document) {
         state,
         tileKinds,
         isHole,
-        specialCreationContext: createSpecialCreationContext(previousResult, clickedCell),
+        specialCreationContext: createSpecialCreationContext(previousResult, clickedCell, allowSpecialCreation),
       });
       previousResult = result;
       const resolution = await animateResolution({
@@ -797,13 +761,100 @@ export function initialize(doc = globalThis.document) {
     return { cascadeCount, goalFlights };
   }
 
-  function createSpecialCreationContext(previousResult, clickedCell) {
+  async function completeLevelWithCleanup() {
+    await runEndgameSpecialCleanup();
+    state.isLevelCompleted = true;
+    state.isProcessing = false;
+    tileView.syncInteractivity();
+    renderHud();
+    hudView.setStatus("关卡完成", `${getCurrentLevelLabel()} 已达成全部目标`);
+    hudView.showLevelOverlay({
+      title: "关卡完成",
+      detail: `${getCurrentLevelLabel()} 已达成全部目标`,
+      actionLabel: getActionButtonLabel(),
+    });
+  }
+
+  async function runEndgameSpecialCleanup() {
+    while (true) {
+      const specialTile = pickEndgameSpecialTile();
+      if (!specialTile) {
+        break;
+      }
+
+      hudView.setStatus("收尾结算", "激活剩余道具");
+      await resolveEndgameSpecialTile(specialTile);
+    }
+  }
+
+  async function resolveEndgameSpecialTile(tile) {
+    const { columns, rows, tileKinds } = getCurrentLevelSettings();
+    const clickedCell = { x: tile.x, y: tile.y };
+    const specialChain = collectSpecialChain(tile, columns, rows);
+    const result = applyRemovalsAndCollapse({
+      board: state.board,
+      tilesToRemove: specialChain.tilesToRemove,
+      columns,
+      rows,
+      state,
+      tileKinds,
+      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      isBlocked,
+      isHole,
+      specialCreationContext: { allowSpecialCreation: false, clickedCell },
+    });
+    result.windmillEffects = specialChain.windmillEffects;
+    result.hiveEffects = specialChain.hiveEffects;
+
+    const resolution = await animateResolution({
+      result,
+      tileView,
+      removeDuration: REMOVE_DURATION,
+      fallDuration: FALL_DURATION,
+      flyDuration: FLY_DURATION,
+      isGoalKind,
+      getGoalRect: hudView.getGoalSwatchRect,
+      onGoalArrive: handleGoalArrive,
+      onAfterRemoval: () => tileView.renderBricks(state.bricks),
+    });
+
+    const cascadeResult = await resolveBoardMatches("收尾", {
+      clickedCell,
+      previousResult: result,
+      allowSpecialCreation: false,
+    });
+
+    await Promise.all([
+      resolution.goalFlights,
+      ...cascadeResult.goalFlights,
+    ]);
+  }
+
+  function pickEndgameSpecialTile() {
+    const { columns, rows } = getCurrentLevelSettings();
+    const specialTiles = [];
+
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < columns; x += 1) {
+        const tile = state.board[y]?.[x] ?? null;
+        if (tile?.special) {
+          specialTiles.push(tile);
+        }
+      }
+    }
+
+    specialTiles.sort((a, b) => a.y - b.y || a.x - b.x || a.id - b.id);
+    return specialTiles[0] ?? null;
+  }
+
+  function createSpecialCreationContext(previousResult, clickedCell, allowSpecialCreation = true) {
     if (!previousResult) {
-      return { clickedCell, movedTileIds: new Set() };
+      return { clickedCell, movedTileIds: new Set(), allowSpecialCreation };
     }
 
     return {
       clickedCell,
+      allowSpecialCreation,
       movedTileIds: new Set([
         ...(previousResult.dropped ?? []).map((move) => move.tile.id),
         ...(previousResult.spawned ?? []).map((spawn) => spawn.tile.id),
@@ -1234,6 +1285,12 @@ function collectFirstScreenAssetPaths() {
 
   if (!firstLevel) {
     return [...assetPaths];
+  }
+
+  if ((firstLevel.bricks?.length ?? 0) > 0) {
+    for (const assetPath of BRICK_ASSET_PATHS) {
+      assetPaths.add(assetPath);
+    }
   }
 
   for (const goal of firstLevel.goals ?? []) {

@@ -20,29 +20,29 @@ export function randomKind(tileKinds) {
   return tileKinds[Math.floor(Math.random() * tileKinds.length)];
 }
 
-export function createBoard({ state, columns, rows, tileKinds, maxAttempts, isHole = () => false }) {
+export function createBoard({
+  state,
+  columns,
+  rows,
+  tileKinds,
+  maxAttempts,
+  isBlocked = () => false,
+  isHole = () => false,
+}) {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const nextBoard = [];
+    const nextBoard = Array.from({ length: rows }, () => Array(columns).fill(null));
 
-    for (let y = 0; y < rows; y += 1) {
-      const row = [];
-
-      for (let x = 0; x < columns; x += 1) {
-        row.push(isHole(x, y) ? null : createTile(state, x, y, randomKind(tileKinds)));
-      }
-
-      nextBoard.push(row);
-    }
+    collapseBoard({ board: nextBoard, columns, rows, state, tileKinds, isBlocked, isHole });
 
     if (findMatches(nextBoard, columns, rows).length === 0) {
       return nextBoard;
     }
   }
 
-  return createFallbackBoard({ state, columns, rows, tileKinds, isHole });
+  return createFallbackBoard({ state, columns, rows, tileKinds, isBlocked, isHole });
 }
 
-export function createFixedBoard({ state, layout, tileKindMap, isHole = () => false }) {
+export function createFixedBoard({ state, layout, tileKindMap, isBlocked = () => false, isHole = () => false }) {
   const nextBoard = [];
   // 定义数字到 Key 的映射
   const numToKey = {
@@ -59,7 +59,7 @@ export function createFixedBoard({ state, layout, tileKindMap, isHole = () => fa
   for (let y = 0; y < layout.length; y += 1) {
     const row = [];
     for (let x = 0; x < layout[y].length; x += 1) {
-      if (isHole(x, y)) {
+      if (isHole(x, y) || isBlocked(x, y)) {
         // 镂空格不生成棋子，保持 null
         row.push(null);
         continue;
@@ -80,24 +80,17 @@ export function createFixedBoard({ state, layout, tileKindMap, isHole = () => fa
   return nextBoard;
 }
 
-function createFallbackBoard({ state, columns, rows, tileKinds, isHole = () => false }) {
-  const nextBoard = [];
+function createFallbackBoard({
+  state,
+  columns,
+  rows,
+  tileKinds,
+  isBlocked = () => false,
+  isHole = () => false,
+}) {
+  const nextBoard = Array.from({ length: rows }, () => Array(columns).fill(null));
 
-  for (let y = 0; y < rows; y += 1) {
-    const row = [];
-
-    for (let x = 0; x < columns; x += 1) {
-      if (isHole(x, y)) {
-        row.push(null);
-        continue;
-      }
-
-      const kind = tileKinds[(x + y * 2) % tileKinds.length];
-      row.push(createTile(state, x, y, kind));
-    }
-
-    nextBoard.push(row);
-  }
+  collapseBoard({ board: nextBoard, columns, rows, state, tileKinds, isBlocked, isHole });
 
   return nextBoard;
 }
@@ -111,6 +104,8 @@ export function applyRemovalsAndCollapse({
   state,
   tileKinds,
   specialCreationContext = null,
+  applyObstacleDamage = null,
+  isBlocked = () => false,
   isHole = () => false,
 }) {
   const removedTiles = [];
@@ -154,19 +149,26 @@ export function applyRemovalsAndCollapse({
     }
   }
 
-  const collapseResult = collapseBoard({ board, columns, rows, state, tileKinds, isHole });
+  const obstacleResult = applyObstacleDamage?.(removedTiles) ?? { damagedBricks: [], brokenBricks: [] };
+  const collapseResult = collapseBoard({ board, columns, rows, state, tileKinds, isBlocked, isHole });
 
   return {
     removedTiles,
     removedTileGroups,
     createdSpecialTiles,
     triggeredSpecialTiles,
+    damagedBricks: obstacleResult.damagedBricks,
+    brokenBricks: obstacleResult.brokenBricks,
     dropped: collapseResult.dropped,
     spawned: collapseResult.spawned,
   };
 }
 
 function pickMatchSpecialTile(group, specialCreationContext) {
+  if (specialCreationContext?.allowSpecialCreation === false) {
+    return null;
+  }
+
   if (group.length < FOUR_MATCH_SIZE || group.some((tile) => tile.special)) {
     return null;
   }
@@ -207,55 +209,103 @@ function pickStableTile(group) {
   })[0];
 }
 
-function collapseBoard({ board, columns, rows, state, tileKinds, isHole = () => false }) {
+function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () => false, isHole = () => false }) {
   const dropped = [];
   const spawned = [];
+  const canOccupy = (x, y) => x >= 0 && x < columns && y >= 0 && y < rows && !isHole(x, y) && !isBlocked(x, y);
 
-  for (let x = 0; x < columns; x += 1) {
-    // 只在“可用行”之间做重力压缩；镂空格保持 null，棋子可穿过它下落补位。
-    const playableRows = [];
-    for (let y = rows - 1; y >= 0; y -= 1) {
-      if (!isHole(x, y)) {
-        playableRows.push(y);
-      }
-    }
-
-    let writeIndex = 0;
-
-    // 自下而上：把现有棋子依次压到最底部的可用行
-    for (let readRow = rows - 1; readRow >= 0; readRow -= 1) {
-      if (isHole(x, readRow)) {
+  for (let y = rows - 1; y >= 0; y -= 1) {
+    for (let x = 0; x < columns; x += 1) {
+      if (!canOccupy(x, y) || board[y][x]) {
         continue;
       }
 
-      const tile = board[readRow][x];
-      if (!tile) {
+      const source = findSourceCell(board, x, y, canOccupy);
+      if (source) {
+        const tile = board[source.y][source.x];
+        board[source.y][source.x] = null;
+        board[y][x] = tile;
+        dropped.push({ tile, fromX: source.x, fromY: source.y, toX: x, toY: y });
+        tile.x = x;
+        tile.y = y;
         continue;
       }
 
-      const writeRow = playableRows[writeIndex];
-      if (readRow !== writeRow) {
-        board[writeRow][x] = tile;
-        board[readRow][x] = null;
-        dropped.push({ tile, fromY: readRow, toY: writeRow });
-        tile.y = writeRow;
+      if (isReachableFromTop(x, y, canOccupy)) {
+        const tile = createTile(state, x, y, randomKind(tileKinds));
+        board[y][x] = tile;
+        spawned.push({ tile, fromRow: -1, toRow: y });
       }
-
-      writeIndex += 1;
-    }
-
-    // 顶部剩余的可用行生成新棋子，从棋盘上方穿入
-    let spawnIndex = 0;
-    for (let index = writeIndex; index < playableRows.length; index += 1) {
-      const row = playableRows[index];
-      const tile = createTile(state, x, row, randomKind(tileKinds));
-      board[row][x] = tile;
-      spawned.push({ tile, fromRow: -1 - spawnIndex, toRow: row });
-      spawnIndex += 1;
     }
   }
 
   return { dropped, spawned };
+}
+
+function getPredecessorCells(x, y, canOccupy) {
+  if (y <= 0) {
+    return [];
+  }
+
+  const diagonalCandidates = (x + y) % 2 === 0
+    ? [{ x: x - 1, y: y - 1 }, { x: x + 1, y: y - 1 }]
+    : [{ x: x + 1, y: y - 1 }, { x: x - 1, y: y - 1 }];
+
+  const candidates = [{ x, y: y - 1 }, ...diagonalCandidates];
+  return candidates.filter((cell) => canOccupy(cell.x, cell.y));
+}
+
+function findSourceCell(board, targetX, targetY, canOccupy) {
+  const queue = getPredecessorCells(targetX, targetY, canOccupy).map((cell) => ({ ...cell }));
+  const visited = new Set(queue.map((cell) => `${cell.x},${cell.y}`));
+
+  while (queue.length > 0) {
+    const cell = queue.shift();
+    const tile = board[cell.y]?.[cell.x] ?? null;
+    if (tile) {
+      return cell;
+    }
+
+    for (const predecessor of getPredecessorCells(cell.x, cell.y, canOccupy)) {
+      const key = `${predecessor.x},${predecessor.y}`;
+      if (visited.has(key)) {
+        continue;
+      }
+
+      visited.add(key);
+      queue.push(predecessor);
+    }
+  }
+
+  return null;
+}
+
+function isReachableFromTop(targetX, targetY, canOccupy) {
+  if (!canOccupy(targetX, targetY)) {
+    return false;
+  }
+
+  const queue = [{ x: targetX, y: targetY }];
+  const visited = new Set([`${targetX},${targetY}`]);
+
+  while (queue.length > 0) {
+    const cell = queue.shift();
+    if (cell.y === 0) {
+      return true;
+    }
+
+    for (const predecessor of getPredecessorCells(cell.x, cell.y, canOccupy)) {
+      const key = `${predecessor.x},${predecessor.y}`;
+      if (visited.has(key)) {
+        continue;
+      }
+
+      visited.add(key);
+      queue.push(predecessor);
+    }
+  }
+
+  return false;
 }
 
 export function findTileById({ board, columns, rows, tileId }) {
