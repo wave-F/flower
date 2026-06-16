@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Windmill Gust Showcase</title>
+    <link rel="stylesheet" href="./windmill-showcase.css" />
+  </head>
+  <body>
+    <main class="showcase-app">
+      <header class="showcase-header">
+        <div>
+          <p class="showcase-eyebrow">FX Preview</p>
+          <h1 class="showcase-title">风车吹风特效展示</h1>
+          <p class="showcase-copy">单独放大查看：风车蓄力、4 路风刷、命中反馈与目标消除。</p>
+        </div>
+        <div class="showcase-controls">
+          <button id="playShowcaseButton" class="showcase-button" type="button">重新播放</button>
+          <button id="resetShowcaseButton" class="showcase-button showcase-button--secondary" type="button">重置目标</button>
+        </div>
+      </header>
+
+      <section class="showcase-main">
+        <div class="showcase-stage-shell">
+          <div id="showcaseStage" class="showcase-stage" aria-label="windmill effect showcase">
+            <div class="showcase-board-glow"></div>
+
+            <div id="showcaseBoardFrame" class="showcase-board-frame">
+              <div id="showcaseBoard" class="showcase-board" aria-hidden="true"></div>
+              <div id="showcaseBoardPieces" class="showcase-board-pieces">
+                <div class="showcase-target" data-target-slot="up" data-col="2" data-row="1">
+                  <span class="target-core target-core--rose"></span>
+                  <span class="target-ring"></span>
+                </div>
+                <div class="showcase-target" data-target-slot="right" data-col="3" data-row="2">
+                  <span class="target-core target-core--sky"></span>
+                  <span class="target-ring"></span>
+                </div>
+                <div class="showcase-target" data-target-slot="down" data-col="2" data-row="3">
+                  <span class="target-core target-core--amber"></span>
+                  <span class="target-ring"></span>
+                </div>
+                <div class="showcase-target" data-target-slot="left" data-col="1" data-row="2">
+                  <span class="target-core target-core--violet"></span>
+                  <span class="target-ring"></span>
+                </div>
+
+                <button id="showcaseWindmill" class="showcase-windmill" type="button" aria-label="风车展示" data-col="2" data-row="2">
+                  <span class="windmill-shadow"></span>
+                  <span class="windmill-blade windmill-blade--north"></span>
+                  <span class="windmill-blade windmill-blade--east"></span>
+                  <span class="windmill-blade windmill-blade--south"></span>
+                  <span class="windmill-blade windmill-blade--west"></span>
+                  <span class="windmill-core"></span>
+                  <span class="windmill-spark"></span>
+                </button>
+
+                <div id="showcaseOverlay" class="showcase-overlay" aria-hidden="true"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="showcase-debug-panel" aria-label="风特效调试参数">
+          <div class="debug-panel-header">
+            <h2 class="debug-panel-title">调试面板</h2>
+            <label class="debug-toggle">
+              <input id="autoplayToggle" type="checkbox" checked />
+              <span>循环播放</span>
+            </label>
+          </div>
+
+          <div class="debug-actions">
+            <button id="writeBackButton" class="showcase-button" type="button">写回主风车默认参数</button>
+            <p id="writeBackStatus" class="debug-status" aria-live="polite">未写回</p>
+          </div>
+
+          <div class="debug-grid">
+            <label class="debug-control">
+              <span>风时长</span>
+              <output id="gustDurationValue">520ms</output>
+              <input id="gustDurationInput" type="range" min="220" max="1400" step="10" value="520" />
+            </label>
+
+            <label class="debug-control">
+              <span>循环间隔</span>
+              <output id="loopDelayValue">900ms</output>
+              <input id="loopDelayInput" type="range" min="0" max="2400" step="50" value="900" />
+            </label>
+
+            <label class="debug-control">
+              <span>命中时机</span>
+              <output id="hitDelayRatioValue">60%</output>
+              <input id="hitDelayRatioInput" type="range" min="35" max="85" step="1" value="60" />
+            </label>
+
+            <label class="debug-control">
+              <span>命中反馈时长</span>
+              <output id="hitDurationValue">280ms</output>
+              <input id="hitDurationInput" type="range" min="120" max="800" step="10" value="280" />
+            </label>
+
+            <label class="debug-control">
+              <span>风团厚度</span>
+              <output id="widthScaleValue">100%</output>
+              <input id="widthScaleInput" type="range" min="60" max="180" step="1" value="100" />
+            </label>
+
+            <label class="debug-control">
+              <span>风团弯曲</span>
+              <output id="curlScaleValue">100%</output>
+              <input id="curlScaleInput" type="range" min="40" max="180" step="1" value="100" />
+            </label>
+
+            <label class="debug-control">
+              <span>风层分散</span>
+              <output id="spreadScaleValue">100%</output>
+              <input id="spreadScaleInput" type="range" min="40" max="180" step="1" value="100" />
+            </label>
+
+            <label class="debug-control">
+              <span>风屑数量</span>
+              <output id="dustCountValue">4</output>
+              <input id="dustCountInput" type="range" min="0" max="12" step="1" value="4" />
+            </label>
+
+            <label class="debug-control">
+              <span>风屑尺寸</span>
+              <output id="dustSizeValue">100%</output>
+              <input id="dustSizeInput" type="range" min="40" max="180" step="1" value="100" />
+            </label>
+
+            <label class="debug-control">
+              <span>风屑摆动</span>
+              <output id="dustWobbleValue">100%</output>
+              <input id="dustWobbleInput" type="range" min="40" max="220" step="1" value="100" />
+            </label>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script defer src="./src/demo/windmillShowcase.js"></script>
+  </body>
+</html>

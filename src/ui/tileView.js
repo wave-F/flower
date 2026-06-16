@@ -1,13 +1,19 @@
 import { getBoardMetrics } from "./boardLayout.js";
 import { createExplosionFx } from "./explosionFx.js";
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 export function createTileView({ tileLayerElement, flyLayerElement, boardElement, boardShellElement, getInteractionDisabled }) {
   const tileElements = new Map();
   const tilePool = [];
   const explosionFx = createExplosionFx({ boardShellElement });
+  let windGustIdSeed = 0;
+  let lightningLinkIdSeed = 0;
 
   function clearAllTiles() {
     explosionFx.clear();
+    flyLayerElement.querySelectorAll(".lightning-link").forEach((element) => element.remove());
+    flyLayerElement.querySelectorAll(".lightball-fusion-focus").forEach((element) => element.remove());
     for (const element of tileElements.values()) {
       releaseTileElement(element);
     }
@@ -153,6 +159,15 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.classList.toggle("is-lightball-charging", active);
   }
 
+  function setLightballFusionState(tileId, active = true) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      return;
+    }
+
+    element.classList.toggle("is-lightball-fusing", active);
+  }
+
   function setLightballSelectedState(tileId, active = true) {
     const element = tileElements.get(tileId);
     if (!element) {
@@ -186,21 +201,15 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
 
       const toCenterX = targetRect.left + targetRect.width / 2;
       const toCenterY = targetRect.top + targetRect.height / 2;
-      const deltaX = toCenterX - fromCenterX;
-      const deltaY = toCenterY - fromCenterY;
-      const length = Math.hypot(deltaX, deltaY);
       const delay = index * stagger;
-      const angle = Math.atan2(deltaY, deltaX);
-      const linkElement = document.createElement("span");
-
-      linkElement.className = "lightning-link";
-      linkElement.style.left = `${fromCenterX}px`;
-      linkElement.style.top = `${fromCenterY}px`;
-      linkElement.style.width = `${length}px`;
-      linkElement.style.setProperty("--lightning-duration", `${duration}ms`);
-      linkElement.style.setProperty("--lightning-delay", `${delay}ms`);
-      linkElement.style.transform = `translateY(-50%) rotate(${angle}rad)`;
-      flyLayerElement.appendChild(linkElement);
+      const link = createLightningLinkElement({
+        fromCenterX,
+        fromCenterY,
+        toCenterX,
+        toCenterY,
+      });
+      link.element.style.setProperty("--lightning-duration", `${duration}ms`);
+      flyLayerElement.appendChild(link.element);
 
       const lockTimeout = setTimeout(() => {
         onTargetLock?.(targetTileId);
@@ -208,28 +217,480 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
 
       const linkPromise = new Promise((resolve) => {
         let settled = false;
+        let startTimeout = 0;
+        let fallbackTimeout = 0;
+        let opacityAnimation = null;
         const cleanup = () => {
           if (settled) {
             return;
           }
 
           settled = true;
+          clearTimeout(startTimeout);
+          clearTimeout(fallbackTimeout);
           clearTimeout(lockTimeout);
-          linkElement.remove();
+          opacityAnimation?.cancel();
+          link.element.remove();
           resolve();
         };
 
-        linkElement.addEventListener("animationend", cleanup, { once: true });
-        setTimeout(cleanup, delay + duration + 160);
+        startTimeout = setTimeout(() => {
+          const startTime = performance.now();
+          link.element.classList.add("is-active");
+          opacityAnimation = link.element.animate([
+            { opacity: 0 },
+            { opacity: 1, offset: 0.12 },
+            { opacity: 0.96, offset: 0.74 },
+            { opacity: 0, offset: 1 },
+          ], {
+            duration,
+            easing: "linear",
+            fill: "both",
+          });
+          opacityAnimation.finished.then(cleanup).catch(() => {
+            if (!settled) {
+              cleanup();
+            }
+          });
+        }, delay);
+
+        fallbackTimeout = setTimeout(cleanup, delay + duration + 180);
       });
 
-      requestAnimationFrame(() => {
-        linkElement.classList.add("is-active");
-      });
       linkPromises.push(linkPromise);
     });
 
     return Promise.all(linkPromises);
+  }
+
+  function createLightningLinkElement({ fromCenterX, fromCenterY, toCenterX, toCenterY }) {
+    const padding = 28;
+    const left = Math.min(fromCenterX, toCenterX) - padding;
+    const top = Math.min(fromCenterY, toCenterY) - padding;
+    const width = Math.abs(toCenterX - fromCenterX) + padding * 2;
+    const height = Math.abs(toCenterY - fromCenterY) + padding * 2;
+    const startX = fromCenterX - left;
+    const startY = fromCenterY - top;
+    const endX = toCenterX - left;
+    const endY = toCenterY - top;
+    const length = Math.hypot(endX - startX, endY - startY) || 1;
+    const linkId = `lightning-link-${lightningLinkIdSeed}`;
+    lightningLinkIdSeed += 1;
+    const element = createSvgElement("svg");
+    const defsElement = createSvgElement("defs");
+    const gradientElement = createSvgElement("linearGradient");
+    const glowPath = createSvgElement("line");
+    const corePath = createSvgElement("line");
+    const startFlare = createSvgElement("circle");
+    const endFlare = createSvgElement("circle");
+
+    element.classList.add("lightning-link");
+    element.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    element.setAttribute("width", String(width));
+    element.setAttribute("height", String(height));
+    element.setAttribute("aria-hidden", "true");
+    element.style.left = `${left}px`;
+    element.style.top = `${top}px`;
+    element.style.width = `${width}px`;
+    element.style.height = `${height}px`;
+    element.style.setProperty("--beam-length", String(length));
+
+    gradientElement.setAttribute("id", linkId);
+    gradientElement.setAttribute("gradientUnits", "userSpaceOnUse");
+    gradientElement.setAttribute("x1", String(startX));
+    gradientElement.setAttribute("y1", String(startY));
+    gradientElement.setAttribute("x2", String(endX));
+    gradientElement.setAttribute("y2", String(endY));
+    appendLightningGradientStop(gradientElement, "0%", "#fff4c4", 0.18);
+    appendLightningGradientStop(gradientElement, "12%", "#ffe187", 0.92);
+    appendLightningGradientStop(gradientElement, "38%", "#ff8fd2", 0.96);
+    appendLightningGradientStop(gradientElement, "62%", "#7bdfff", 0.98);
+    appendLightningGradientStop(gradientElement, "84%", "#84f5b2", 0.94);
+    appendLightningGradientStop(gradientElement, "100%", "#fffce3", 0.68);
+    defsElement.appendChild(gradientElement);
+
+    glowPath.classList.add("lightning-link-path", "lightning-link-path--glow");
+    corePath.classList.add("lightning-link-path", "lightning-link-path--core");
+    glowPath.setAttribute("stroke", `url(#${linkId})`);
+    corePath.setAttribute("stroke", `url(#${linkId})`);
+
+    startFlare.classList.add("lightning-link-flare", "lightning-link-flare--source");
+    startFlare.setAttribute("cx", String(startX));
+    startFlare.setAttribute("cy", String(startY));
+    startFlare.setAttribute("r", "6.5");
+    endFlare.classList.add("lightning-link-flare", "lightning-link-flare--target");
+    endFlare.setAttribute("cx", String(endX));
+    endFlare.setAttribute("cy", String(endY));
+    endFlare.setAttribute("r", "4.5");
+
+    setLightningLinkGeometry(glowPath, startX, startY, endX, endY);
+    setLightningLinkGeometry(corePath, startX, startY, endX, endY);
+
+    element.append(defsElement, glowPath, corePath, startFlare, endFlare);
+
+    return {
+      element,
+      glowPath,
+      corePath,
+    };
+  }
+
+  function appendLightningGradientStop(gradientElement, offset, color, opacity = 1) {
+    const stopElement = createSvgElement("stop");
+    stopElement.setAttribute("offset", offset);
+    stopElement.setAttribute("stop-color", color);
+    stopElement.setAttribute("stop-opacity", String(opacity));
+    gradientElement.appendChild(stopElement);
+  }
+
+  function setLightningLinkGeometry(lineElement, startX, startY, endX, endY) {
+    lineElement.setAttribute("x1", String(startX));
+    lineElement.setAttribute("y1", String(startY));
+    lineElement.setAttribute("x2", String(endX));
+    lineElement.setAttribute("y2", String(endY));
+  }
+
+  function playWindLines({
+    fromRect,
+    toTileIds = [],
+    duration = 220,
+    stagger = 0,
+    windConfig = {},
+    onTargetHit,
+  } = {}) {
+    if (!fromRect || toTileIds.length === 0) {
+      return Promise.resolve();
+    }
+
+    const fromCenterX = fromRect.left + fromRect.width / 2;
+    const fromCenterY = fromRect.top + fromRect.height / 2;
+    const linePromises = [];
+
+    toTileIds.forEach((targetTileId, index) => {
+      const targetRect = getTileRect(targetTileId);
+      if (!targetRect) {
+        onTargetHit?.(targetTileId);
+        return;
+      }
+
+      const toCenterX = targetRect.left + targetRect.width / 2;
+      const toCenterY = targetRect.top + targetRect.height / 2;
+      const deltaX = toCenterX - fromCenterX;
+      const deltaY = toCenterY - fromCenterY;
+      const length = Math.hypot(deltaX, deltaY);
+      const delay = index * stagger;
+      const gustElement = createWindGustSvg({
+        fromCenterX,
+        fromCenterY,
+        toCenterX,
+        toCenterY,
+        length,
+        windConfig,
+      });
+      const dustPromise = emitWindDust({
+        fromCenterX,
+        fromCenterY,
+        toCenterX,
+        toCenterY,
+        duration,
+        delay,
+        windConfig,
+      });
+      gustElement.style.setProperty("--wind-line-duration", `${duration}ms`);
+      gustElement.style.setProperty("--wind-line-delay", `${delay}ms`);
+      flyLayerElement.appendChild(gustElement);
+
+      const hitTimeout = setTimeout(() => {
+        onTargetHit?.(targetTileId);
+      }, delay + duration * 0.68);
+
+      const linePromise = new Promise((resolve) => {
+        let settled = false;
+        const cleanup = () => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          clearTimeout(hitTimeout);
+          gustElement.remove();
+          resolve();
+        };
+
+        gustElement.addEventListener("animationend", cleanup, { once: true });
+        setTimeout(cleanup, delay + duration + 180);
+      });
+
+      requestAnimationFrame(() => {
+        gustElement.classList.add("is-active");
+      });
+      linePromises.push(Promise.all([linePromise, dustPromise]));
+    });
+
+    return Promise.all(linePromises);
+  }
+
+  function createWindGustSvg({ fromCenterX, fromCenterY, toCenterX, toCenterY, length, windConfig = {} }) {
+    const padding = Math.max(18, Math.min(42, length * 0.16));
+    const width = Math.max(1, length + padding * 2);
+    const height = Math.max(34, Math.min(72, length * 0.34));
+    const angle = Math.atan2(toCenterY - fromCenterY, toCenterX - fromCenterX);
+    const gustElement = createSvgElement("svg");
+    const pathSet = buildWindGustShapes({ width, height, length, padding, windConfig });
+    const gustId = `wind-gust-${windGustIdSeed}`;
+    windGustIdSeed += 1;
+
+    gustElement.classList.add("wind-gust");
+    gustElement.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    gustElement.setAttribute("width", String(width));
+    gustElement.setAttribute("height", String(height));
+    gustElement.setAttribute("aria-hidden", "true");
+    gustElement.style.left = `${fromCenterX - padding}px`;
+    gustElement.style.top = `${fromCenterY - height / 2}px`;
+    gustElement.style.width = `${width}px`;
+    gustElement.style.height = `${height}px`;
+    gustElement.style.transform = `rotate(${angle}rad)`;
+    gustElement.style.transformOrigin = `${padding}px ${height / 2}px`;
+    appendWindGustDefs(gustElement, gustId);
+
+    pathSet.forEach((shapeConfig) => {
+      appendWindGustShape(gustElement, gustId, shapeConfig.softLayer);
+      appendWindGustShape(gustElement, gustId, shapeConfig.mainLayer);
+    });
+
+    return gustElement;
+  }
+
+  function appendWindGustDefs(gustElement, gustId) {
+    const defsElement = createSvgElement("defs");
+    const blurFilter = createSvgElement("filter");
+    blurFilter.setAttribute("id", `${gustId}-soft-blur`);
+    blurFilter.setAttribute("x", "-24%");
+    blurFilter.setAttribute("y", "-24%");
+    blurFilter.setAttribute("width", "148%");
+    blurFilter.setAttribute("height", "148%");
+    const gaussianBlur = createSvgElement("feGaussianBlur");
+    gaussianBlur.setAttribute("stdDeviation", "2.4");
+    blurFilter.appendChild(gaussianBlur);
+    defsElement.appendChild(blurFilter);
+    gustElement.appendChild(defsElement);
+  }
+
+  function appendWindGustShape(gustElement, gustId, {
+    className,
+    d,
+    durationScale,
+    driftX,
+    driftY,
+    filterId = null,
+  } = {}) {
+    const pathElement = createSvgElement("path");
+    pathElement.classList.add("wind-gust-shape");
+    className
+      .split(/\s+/)
+      .filter(Boolean)
+      .forEach((token) => {
+        pathElement.classList.add(token);
+      });
+    pathElement.setAttribute("d", d);
+    if (filterId) {
+      pathElement.setAttribute("filter", `url(#${gustId}-${filterId})`);
+    }
+    pathElement.style.setProperty("--wind-duration-scale", String(durationScale));
+    pathElement.style.setProperty("--wind-drift-x", `${driftX}px`);
+    pathElement.style.setProperty("--wind-drift-y", `${driftY}px`);
+    pathElement.style.setProperty("--wind-settle-x", `${driftX * 0.3}px`);
+    pathElement.style.setProperty("--wind-settle-y", `${driftY * 0.3}px`);
+    gustElement.appendChild(pathElement);
+  }
+
+  function buildWindGustShapes({ width, height, length, padding, windConfig = {} }) {
+    const centerY = height / 2;
+    const arcBase = Math.max(8, Math.min(22, length * 0.1)) * (windConfig.windCurlScale ?? 1);
+    const startX = padding;
+    const endX = padding + length;
+    const widthScale = windConfig.windWidthScale ?? 1;
+    const spreadScale = windConfig.windSpreadScale ?? 1;
+    const descriptors = [
+      {
+        className: "wind-gust-shape--core",
+        centerShift: -1 * spreadScale,
+        startWidth: 2 * widthScale,
+        midWidthA: 13 * widthScale,
+        midWidthB: 8 * widthScale,
+        endWidth: 2 * widthScale,
+        topBiasA: arcBase * -0.32,
+        topBiasB: arcBase * 0.18,
+        bottomBiasA: arcBase * 0.48,
+        bottomBiasB: arcBase * -0.16,
+        durationScale: 1,
+        driftX: 0,
+        driftY: -2 * spreadScale,
+      },
+      {
+        className: "wind-gust-shape--upper",
+        centerShift: -7 * spreadScale,
+        startWidth: 1.5 * widthScale,
+        midWidthA: 8 * widthScale,
+        midWidthB: 5 * widthScale,
+        endWidth: 1.4 * widthScale,
+        topBiasA: arcBase * -0.86,
+        topBiasB: arcBase * 0.38,
+        bottomBiasA: arcBase * 0.22,
+        bottomBiasB: arcBase * -0.12,
+        durationScale: 0.92,
+        driftX: 0,
+        driftY: -4 * spreadScale,
+      },
+      {
+        className: "wind-gust-shape--lower",
+        centerShift: 8 * spreadScale,
+        startWidth: 1.2 * widthScale,
+        midWidthA: 6 * widthScale,
+        midWidthB: 4 * widthScale,
+        endWidth: 1 * widthScale,
+        topBiasA: arcBase * -0.18,
+        topBiasB: arcBase * 0.12,
+        bottomBiasA: arcBase * 0.94,
+        bottomBiasB: arcBase * -0.44,
+        durationScale: 1.08,
+        driftX: 0,
+        driftY: 4 * spreadScale,
+      },
+    ];
+
+    return descriptors.map((descriptor) => {
+      const d = buildWindRibbonPath({ startX, endX, centerY, length, descriptor });
+
+      return {
+        softLayer: {
+          className: `${descriptor.className} wind-gust-shape--mist`,
+          d,
+          durationScale: descriptor.durationScale * 1.05,
+          driftX: descriptor.driftX * 0.7,
+          driftY: descriptor.driftY * 0.7,
+          filterId: "soft-blur",
+        },
+        mainLayer: {
+          className: descriptor.className,
+          d,
+          durationScale: descriptor.durationScale,
+          driftX: descriptor.driftX,
+          driftY: descriptor.driftY,
+        },
+      };
+    });
+  }
+
+  function buildWindRibbonPath({ startX, endX, centerY, length, descriptor }) {
+    const y = centerY + descriptor.centerShift;
+    const x1 = startX + length * 0.18;
+    const x2 = startX + length * 0.44;
+    const x3 = startX + length * 0.76;
+    const startTop = y - descriptor.startWidth;
+    const midTopA = y - descriptor.midWidthA + descriptor.topBiasA;
+    const midTopB = y - descriptor.midWidthB + descriptor.topBiasB;
+    const endTop = y - descriptor.endWidth;
+    const endBottom = y + descriptor.endWidth;
+    const midBottomB = y + descriptor.midWidthB + descriptor.bottomBiasB;
+    const midBottomA = y + descriptor.midWidthA + descriptor.bottomBiasA;
+    const startBottom = y + descriptor.startWidth;
+
+    return [
+      `M ${startX} ${startTop}`,
+      `C ${x1} ${midTopA}, ${x2} ${midTopB}, ${endX} ${endTop}`,
+      `C ${x3} ${midBottomB}, ${x2} ${midBottomA}, ${startX} ${startBottom}`,
+      "Z",
+    ].join(" ");
+  }
+
+  function emitWindDust({ fromCenterX, fromCenterY, toCenterX, toCenterY, duration, delay, windConfig = {} }) {
+    const particleCount = Math.max(0, Math.round(windConfig.windDustCount ?? 3));
+    if (particleCount <= 0) {
+      return Promise.resolve();
+    }
+    const promises = [];
+
+    for (let index = 0; index < particleCount; index += 1) {
+      promises.push(new Promise((resolve) => {
+        const dustElement = document.createElement("span");
+        const distance = Math.hypot(toCenterX - fromCenterX, toCenterY - fromCenterY) || 1;
+        const directionX = (toCenterX - fromCenterX) / distance;
+        const directionY = (toCenterY - fromCenterY) / distance;
+        const normalX = -directionY;
+        const normalY = directionX;
+        const startProgress = 0.1 + index * 0.1 + Math.random() * 0.05;
+        const endProgress = 0.72 + index * 0.06 + Math.random() * 0.05;
+        const wobble = Math.max(8, Math.min(22, distance * 0.12)) * (windConfig.windDustWobbleScale ?? 1);
+        const startPoint = sampleWindPoint({
+          fromCenterX,
+          fromCenterY,
+          toCenterX,
+          toCenterY,
+          progress: startProgress,
+          normalX,
+          normalY,
+          wobble: wobble * (Math.random() < 0.5 ? -0.5 : 0.5),
+        });
+        const endPoint = sampleWindPoint({
+          fromCenterX,
+          fromCenterY,
+          toCenterX,
+          toCenterY,
+          progress: Math.min(0.98, endProgress),
+          normalX,
+          normalY,
+          wobble: wobble * (Math.random() - 0.5),
+        });
+        const size = (5 + Math.random() * 5) * (windConfig.windDustSizeScale ?? 1);
+        const particleDelay = delay + Math.round(duration * (0.14 + index * 0.08));
+        const particleDuration = Math.round(duration * (0.46 + Math.random() * 0.12));
+
+        dustElement.className = "wind-gust-mote";
+        dustElement.style.width = `${size}px`;
+        dustElement.style.height = `${size}px`;
+        dustElement.style.left = `${startPoint.x - size / 2}px`;
+        dustElement.style.top = `${startPoint.y - size / 2}px`;
+        flyLayerElement.appendChild(dustElement);
+
+        const animation = dustElement.animate([
+          { opacity: 0, transform: "translate3d(0, 0, 0) scale(0.38)" },
+          { opacity: 0.8, transform: `translate3d(${(endPoint.x - startPoint.x) * 0.42}px, ${(endPoint.y - startPoint.y) * 0.42}px, 0) scale(1)`, offset: 0.24 },
+          { opacity: 0.36, transform: `translate3d(${(endPoint.x - startPoint.x) * 0.82}px, ${(endPoint.y - startPoint.y) * 0.82}px, 0) scale(0.94)`, offset: 0.72 },
+          { opacity: 0, transform: `translate3d(${endPoint.x - startPoint.x}px, ${endPoint.y - startPoint.y}px, 0) scale(0.3)` },
+        ], {
+          duration: particleDuration,
+          delay: particleDelay,
+          easing: "cubic-bezier(0.22, 0.78, 0.22, 1)",
+          fill: "both",
+        });
+
+        animation.finished.then(() => {
+          animation.cancel();
+          dustElement.remove();
+          resolve();
+        }).catch(() => {
+          dustElement.remove();
+          resolve();
+        });
+      }));
+    }
+
+    return Promise.all(promises);
+  }
+
+  function sampleWindPoint({ fromCenterX, fromCenterY, toCenterX, toCenterY, progress, normalX, normalY, wobble }) {
+    const deltaX = toCenterX - fromCenterX;
+    const deltaY = toCenterY - fromCenterY;
+    const curve = Math.sin(progress * Math.PI) * wobble;
+    return {
+      x: fromCenterX + deltaX * progress + normalX * curve,
+      y: fromCenterY + deltaY * progress + normalY * curve,
+    };
+  }
+
+  function createSvgElement(tagName) {
+    return document.createElementNS(SVG_NS, tagName);
   }
 
   function flyTile(tileId, { duration, targetRect = null, onArrive } = {}) {
@@ -460,10 +921,12 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     secondaryTileId,
     {
       duration = 320,
-      turns = 0.92,
+      turns = 1.1,
       clockwise = true,
       endScale = 0.88,
       flareDuration = 160,
+      stopDuration = 0,
+      collisionDuration = 160,
       onArrive,
     } = {},
   ) {
@@ -499,6 +962,16 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     const startTime = performance.now();
     let animationFrame = 0;
     let settled = false;
+    let orbitCompleted = false;
+    let lastOrbitAngleOffset = 0;
+    let lastPrimaryRadius = primaryRadius;
+    let lastSecondaryRadius = secondaryRadius;
+    let lastPrimaryScale = 1;
+    let lastSecondaryScale = 1;
+    let stopTimer = 0;
+
+    primaryElement.style.zIndex = "75";
+    secondaryElement.style.zIndex = "75";
 
     const updateOrbitalState = (element, rect, angle, radius, scale, opacity) => {
       const currentCenterX = center.x + Math.cos(angle) * radius;
@@ -510,7 +983,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     };
 
     const playFusionFlare = () => {
-      const flareSize = Math.max(primaryRect.width, secondaryRect.width) * 1.6;
+      const flareSize = Math.max(primaryRect.width, secondaryRect.width) * 2.2;
       const flareElement = document.createElement("span");
       flareElement.style.position = "fixed";
       flareElement.style.left = `${center.x - flareSize / 2}px`;
@@ -519,16 +992,17 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
       flareElement.style.height = `${flareSize}px`;
       flareElement.style.borderRadius = "50%";
       flareElement.style.pointerEvents = "none";
-      flareElement.style.zIndex = "73";
-      flareElement.style.background = "radial-gradient(circle, rgba(255, 255, 255, 0.96) 0 14%, rgba(255, 243, 201, 0.64) 28%, rgba(255, 185, 96, 0.18) 56%, rgba(255, 185, 96, 0) 74%)";
-      flareElement.style.boxShadow = "0 0 20px rgba(255, 244, 211, 0.86), 0 0 42px rgba(255, 201, 125, 0.34)";
+      flareElement.style.zIndex = "76";
+      flareElement.style.background = "radial-gradient(circle, rgba(255, 255, 255, 0.98) 0 12%, rgba(255, 247, 208, 0.92) 18%, rgba(255, 216, 125, 0.48) 36%, rgba(255, 185, 96, 0.14) 58%, rgba(255, 185, 96, 0) 76%)";
+      flareElement.style.boxShadow = "0 0 28px rgba(255, 248, 224, 0.96), 0 0 68px rgba(255, 201, 125, 0.42)";
       flareElement.style.opacity = "0";
       flyLayerElement.appendChild(flareElement);
 
       const flareAnimation = flareElement.animate([
-        { opacity: 0, transform: "scale(0.18)" },
-        { opacity: 1, transform: "scale(1)", offset: 0.34 },
-        { opacity: 0, transform: "scale(1.18)" },
+        { opacity: 0, transform: "scale(0.08)" },
+        { opacity: 1, transform: "scale(0.42)", offset: 0.18 },
+        { opacity: 1, transform: "scale(1)", offset: 0.46 },
+        { opacity: 0, transform: "scale(1.24)" },
       ], {
         duration: flareDuration,
         easing: "cubic-bezier(0.16, 0.84, 0.22, 1)",
@@ -543,6 +1017,25 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
       });
     };
 
+    const settleOrbitPose = () => {
+      updateOrbitalState(
+        primaryElement,
+        primaryRect,
+        primaryStartAngle + lastOrbitAngleOffset,
+        lastPrimaryRadius,
+        lastPrimaryScale,
+        1,
+      );
+      updateOrbitalState(
+        secondaryElement,
+        secondaryRect,
+        secondaryStartAngle + lastOrbitAngleOffset,
+        lastSecondaryRadius,
+        lastSecondaryScale,
+        1,
+      );
+    };
+
     const finish = () => {
       if (settled) {
         return;
@@ -550,32 +1043,97 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
 
       settled = true;
       cancelAnimationFrame(animationFrame);
+      clearTimeout(stopTimer);
       primaryElement.style.left = `${center.x - primaryRect.width / 2}px`;
       primaryElement.style.top = `${center.y - primaryRect.height / 2}px`;
-      primaryElement.style.transform = "scale(1)";
-      primaryElement.style.opacity = "1";
+      primaryElement.style.transform = "scale(0.34)";
+      primaryElement.style.opacity = "0";
+      secondaryElement.style.left = `${center.x - secondaryRect.width / 2}px`;
+      secondaryElement.style.top = `${center.y - secondaryRect.height / 2}px`;
+      secondaryElement.style.transform = "scale(0.34)";
+      secondaryElement.style.opacity = "0";
+      primaryElement.classList.remove("is-lightball-fusing");
+      secondaryElement.classList.remove("is-lightball-fusing");
       playFusionFlare();
       releaseTileElement(secondaryElement);
+      primaryElement.style.removeProperty("z-index");
       onArrive?.();
+    };
+
+    const startCollision = () => {
+      const collisionStart = performance.now();
+
+      const collideStep = (now) => {
+        const rawProgress = Math.min(1, (now - collisionStart) / collisionDuration);
+        const progress = easeInCubic(rawProgress);
+        const primaryCurrentRadius = lerp(lastPrimaryRadius, 0, progress);
+        const secondaryCurrentRadius = lerp(lastSecondaryRadius, 0, progress);
+        const primaryScale = rawProgress < 0.66
+          ? lerp(lastPrimaryScale, 1.24, rawProgress / 0.66)
+          : lerp(1.24, 0.22, (rawProgress - 0.66) / 0.34);
+        const secondaryScale = rawProgress < 0.66
+          ? lerp(lastSecondaryScale, 1.24, rawProgress / 0.66)
+          : lerp(1.24, 0.22, (rawProgress - 0.66) / 0.34);
+        const opacity = rawProgress < 0.8 ? 1 : Math.max(0, 1 - (rawProgress - 0.8) / 0.2);
+
+        updateOrbitalState(
+          primaryElement,
+          primaryRect,
+          primaryStartAngle + lastOrbitAngleOffset,
+          primaryCurrentRadius,
+          primaryScale,
+          opacity,
+        );
+        updateOrbitalState(
+          secondaryElement,
+          secondaryRect,
+          secondaryStartAngle + lastOrbitAngleOffset,
+          secondaryCurrentRadius,
+          secondaryScale,
+          opacity,
+        );
+
+        if (rawProgress >= 1) {
+          finish();
+          return;
+        }
+
+        animationFrame = requestAnimationFrame(collideStep);
+      };
+
+      animationFrame = requestAnimationFrame(collideStep);
     };
 
     const step = (now) => {
       const rawProgress = Math.min(1, (now - startTime) / duration);
       const progress = easeInOutCubic(rawProgress);
-      const angleOffset = totalAngle * progress;
-      const radiusProgress = progress * progress;
-      const primaryCurrentRadius = lerp(primaryRadius, 0, radiusProgress);
-      const secondaryCurrentRadius = lerp(secondaryRadius, 0, radiusProgress);
+      const angularProgress = rawProgress;
+      const angleOffset = totalAngle * angularProgress;
+      const radiusProgress = easeInOutCubic(rawProgress);
+      const primaryCurrentRadius = lerp(primaryRadius, primaryRadius * 0.88, radiusProgress);
+      const secondaryCurrentRadius = lerp(secondaryRadius, secondaryRadius * 0.88, radiusProgress);
       const baseScale = lerp(1, endScale, progress);
-      const primaryScale = rawProgress > 0.82 ? lerp(baseScale, 1.16, (rawProgress - 0.82) / 0.18) : baseScale;
-      const secondaryScale = rawProgress > 0.74 ? lerp(baseScale, 0.16, (rawProgress - 0.74) / 0.26) : baseScale;
-      const secondaryOpacity = rawProgress > 0.72 ? Math.max(0, 1 - (rawProgress - 0.72) / 0.28) : 1;
+      const orbitStretch = 1 + Math.sin(progress * Math.PI) * 0.12;
+      const primaryScale = baseScale * orbitStretch;
+      const secondaryScale = baseScale * orbitStretch;
+
+      lastOrbitAngleOffset = angleOffset;
+      lastPrimaryRadius = primaryCurrentRadius;
+      lastSecondaryRadius = secondaryCurrentRadius;
+      lastPrimaryScale = primaryScale;
+      lastSecondaryScale = secondaryScale;
 
       updateOrbitalState(primaryElement, primaryRect, primaryStartAngle + angleOffset, primaryCurrentRadius, primaryScale, 1);
-      updateOrbitalState(secondaryElement, secondaryRect, secondaryStartAngle + angleOffset, secondaryCurrentRadius, secondaryScale, secondaryOpacity);
+      updateOrbitalState(secondaryElement, secondaryRect, secondaryStartAngle + angleOffset, secondaryCurrentRadius, secondaryScale, 1);
 
       if (rawProgress >= 1) {
-        finish();
+        if (orbitCompleted) {
+          return;
+        }
+
+        orbitCompleted = true;
+        settleOrbitPose();
+        stopTimer = window.setTimeout(startCollision, stopDuration);
         return;
       }
 
@@ -583,7 +1141,13 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     };
 
     animationFrame = requestAnimationFrame(step);
-    setTimeout(finish, duration + flareDuration + 80);
+    window.setTimeout(() => {
+      if (!orbitCompleted) {
+        orbitCompleted = true;
+        settleOrbitPose();
+        stopTimer = window.setTimeout(startCollision, stopDuration);
+      }
+    }, duration + 80);
   }
 
   function pulseTile(tileId, { duration = 120, scaleMultiplier = 1.34, onArrive } = {}) {
@@ -600,6 +1164,45 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     ], {
       duration,
       easing: "cubic-bezier(0.18, 0.92, 0.22, 1)",
+      fill: "both",
+    });
+
+    animation.finished.then(() => {
+      animation.cancel();
+      element.style.removeProperty("transform");
+      onArrive?.();
+    }).catch(() => {
+      element.style.removeProperty("transform");
+      onArrive?.();
+    });
+  }
+
+  function gustHitTile(tileId, { duration = 120, directionX = 0, directionY = 0, onArrive } = {}) {
+    const element = tileElements.get(tileId);
+    if (!element) {
+      onArrive?.();
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const direction = normalizeDirection(directionX, directionY);
+    const offset = Math.max(4, Math.min(10, rect.width * 0.14));
+    const initialTransform = getComputedStyle(element).transform;
+    const baseTransform = initialTransform === "none" ? "" : `${initialTransform} `;
+    const pushX = direction.x * offset;
+    const pushY = direction.y * offset;
+    const settleX = direction.x * (offset * 0.28);
+    const settleY = direction.y * (offset * 0.28);
+    const rotate = Math.max(-8, Math.min(8, direction.x * 8));
+
+    const animation = element.animate([
+      { transform: `${baseTransform}translate3d(0, 0, 0) rotate(0deg) scale(1)` },
+      { transform: `${baseTransform}translate3d(${pushX}px, ${pushY}px, 0) rotate(${rotate}deg) scale(0.88, 1.1)`, offset: 0.34 },
+      { transform: `${baseTransform}translate3d(${settleX}px, ${settleY}px, 0) rotate(${rotate * -0.28}deg) scale(1.04, 0.96)`, offset: 0.72 },
+      { transform: `${baseTransform}translate3d(0, 0, 0) rotate(0deg) scale(1)` },
+    ], {
+      duration,
+      easing: "cubic-bezier(0.2, 0.84, 0.22, 1)",
       fill: "both",
     });
 
@@ -653,14 +1256,79 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     });
   }
 
-  function playBoardShockwave({ rect, duration = 320, sizeMultiplier = 7.2, onPeak, onArrive } = {}) {
+  function showLightballFusionFocus({ maxOpacity = 0.86, fadeInDuration = 180, fadeOutDuration = 170 } = {}) {
+    const focusElement = document.createElement("span");
+    focusElement.className = "lightball-fusion-focus";
+    focusElement.style.opacity = "0";
+    focusElement.style.zIndex = "74";
+    flyLayerElement.appendChild(focusElement);
+
+    const fadeInAnimation = focusElement.animate([
+      { opacity: 0 },
+      { opacity: maxOpacity },
+    ], {
+      duration: fadeInDuration,
+      easing: "cubic-bezier(0.2, 0.84, 0.22, 1)",
+      fill: "forwards",
+    });
+
+    let settled = false;
+    const cleanup = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      focusElement.remove();
+    };
+
+    return {
+      dismiss() {
+        return new Promise((resolve) => {
+          fadeInAnimation.finished.catch(() => undefined).finally(() => {
+            if (!focusElement.isConnected) {
+              resolve();
+              return;
+            }
+
+            const fadeOutAnimation = focusElement.animate([
+              { opacity: maxOpacity },
+              { opacity: 0 },
+            ], {
+              duration: fadeOutDuration,
+              easing: "cubic-bezier(0.36, 0, 0.2, 1)",
+              fill: "forwards",
+            });
+
+            fadeOutAnimation.finished.then(() => {
+              fadeOutAnimation.cancel();
+              cleanup();
+              resolve();
+            }).catch(() => {
+              cleanup();
+              resolve();
+            });
+          });
+        });
+      },
+    };
+  }
+
+  function playBoardShockwave({ rect, duration = 320, sizeMultiplier = 7.2, coverViewport = false, shakeStrength = 0, onPeak, onArrive } = {}) {
     if (!rect) {
       onPeak?.();
       onArrive?.();
       return;
     }
 
-    const size = Math.max(260, Math.min(960, Math.max(rect.width, rect.height) * sizeMultiplier));
+    if (shakeStrength > 0) {
+      shakeBoardShell(shakeStrength);
+    }
+
+    const viewportSize = Math.hypot(window.innerWidth || 0, window.innerHeight || 0);
+    const size = coverViewport
+      ? Math.max(260, viewportSize * 1.08)
+      : Math.max(260, Math.min(960, Math.max(rect.width, rect.height) * sizeMultiplier));
     const shockwaveElement = document.createElement("span");
     shockwaveElement.style.position = "fixed";
     shockwaveElement.style.left = `${rect.left + rect.width / 2}px`;
@@ -673,8 +1341,12 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     shockwaveElement.style.pointerEvents = "none";
     shockwaveElement.style.zIndex = "71";
     shockwaveElement.style.opacity = "0";
-    shockwaveElement.style.background = "radial-gradient(circle, rgba(255, 255, 255, 0.82) 0 5%, rgba(255, 244, 209, 0.3) 14%, rgba(255, 183, 116, 0.18) 32%, rgba(255, 183, 116, 0) 64%)";
-    shockwaveElement.style.boxShadow = "0 0 34px rgba(255, 234, 186, 0.3), 0 0 84px rgba(255, 190, 116, 0.16)";
+    shockwaveElement.style.background = coverViewport
+      ? "radial-gradient(circle, rgba(255, 248, 228, 0.94) 0 4%, rgba(255, 214, 150, 0.54) 10%, rgba(255, 154, 82, 0.26) 24%, rgba(255, 154, 82, 0) 58%)"
+      : "radial-gradient(circle, rgba(255, 255, 255, 0.82) 0 5%, rgba(255, 244, 209, 0.3) 14%, rgba(255, 183, 116, 0.18) 32%, rgba(255, 183, 116, 0) 64%)";
+    shockwaveElement.style.boxShadow = coverViewport
+      ? "0 0 54px rgba(255, 228, 178, 0.4), 0 0 140px rgba(255, 146, 78, 0.24)"
+      : "0 0 34px rgba(255, 234, 186, 0.3), 0 0 84px rgba(255, 190, 116, 0.16)";
     flyLayerElement.appendChild(shockwaveElement);
 
     const peakDelay = Math.max(60, duration * 0.28);
@@ -701,6 +1373,26 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
       clearTimeout(peakTimeout);
       shockwaveElement.remove();
       onArrive?.();
+    });
+  }
+
+  function shakeBoardShell(strength = 1) {
+    if (!boardShellElement?.animate) {
+      return;
+    }
+
+    const amplitude = Math.min(24, Math.max(6, strength * 8));
+    const duration = Math.round(180 + strength * 40);
+    boardShellElement.animate([
+      { transform: "translate3d(0, 0, 0) scale(1)" },
+      { transform: `translate3d(${-amplitude}px, 0, 0) scale(1.01)`, offset: 0.16 },
+      { transform: `translate3d(${amplitude * 0.92}px, 0, 0) scale(0.995)`, offset: 0.32 },
+      { transform: `translate3d(${-(amplitude * 0.68)}px, 0, 0) scale(1.008)`, offset: 0.52 },
+      { transform: `translate3d(${amplitude * 0.38}px, 0, 0) scale(0.998)`, offset: 0.74 },
+      { transform: "translate3d(0, 0, 0) scale(1)" },
+    ], {
+      duration,
+      easing: "cubic-bezier(0.2, 0.84, 0.22, 1)",
     });
   }
 
@@ -947,6 +1639,10 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
       : 1 - ((-2 * progress + 2) ** 3) / 2;
   }
 
+  function easeInCubic(progress) {
+    return progress * progress * progress;
+  }
+
   function lerp(start, end, progress) {
     return start + (end - start) * progress;
   }
@@ -1015,6 +1711,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     element.style.removeProperty("opacity");
     element.style.removeProperty("transform");
     element.style.removeProperty("transition-delay");
+    element.style.removeProperty("z-index");
     element.style.removeProperty("--tile-size");
     element.removeAttribute("aria-label");
     delete element.dataset.tileId;
@@ -1041,6 +1738,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
 
   function clearLightballFxState(tileId) {
     setLightballChargeState(tileId, false);
+    setLightballFusionState(tileId, false);
     setLightballSelectedState(tileId, false);
   }
 
@@ -1091,6 +1789,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     flyTile,
     getTileElement,
     getTileRect,
+    gustHitTile,
     growTileIntoBoard,
     getBoardMetrics: getCurrentBoardMetrics,
     mergeTileIntoTile,
@@ -1098,8 +1797,10 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     orbitTilesIntoFusion,
     playBoardFlash,
     playBoardShockwave,
+    showLightballFusionFocus,
     primeBombTile,
     playLightningLinks,
+    playWindLines,
     pulseTile,
     mountTileForEntry,
     playBombExplosion,
@@ -1107,6 +1808,7 @@ export function createTileView({ tileLayerElement, flyLayerElement, boardElement
     popTile,
     clearLightballFxState,
     setLightballChargeState,
+    setLightballFusionState,
     setLightballSelectedState,
     setWindmillFusionState,
     setTileBoardPosition,

@@ -1123,6 +1123,20 @@ body {
   animation: lightball-charge-pulse 520ms ease-in-out infinite;
 }
 
+.tile--special-hive.is-lightball-fusing::before {
+  transform: translate(-50%, -50%) scale(1.08);
+  filter:
+    drop-shadow(0 0 10px rgba(255, 245, 193, 0.98))
+    drop-shadow(0 0 24px rgba(255, 194, 88, 0.72));
+}
+
+.tile--special-hive.is-lightball-fusing::after {
+  inset: -12px;
+  background:
+    radial-gradient(circle, rgba(255, 249, 215, 0.82) 0 24%, rgba(255, 214, 111, 0.5) 42%, rgba(255, 184, 61, 0) 76%);
+  animation: lightball-fusion-pulse 340ms ease-in-out infinite;
+}
+
 .tile--lightball-selected {
   transform: scale(1.06);
 }
@@ -1201,6 +1215,19 @@ body {
   }
 }
 
+@keyframes lightball-fusion-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.9);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.22);
+  }
+}
+
 .tile.no-transition {
   transition: none;
 }
@@ -1271,46 +1298,149 @@ body {
 .lightning-link {
   position: fixed;
   z-index: 64;
-  height: 4px;
-  margin-top: -2px;
-  border-radius: 999px;
   opacity: 0;
   pointer-events: none;
-  transform-origin: 0 50%;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(202, 247, 255, 0.95) 14%, rgba(124, 218, 255, 1) 50%, rgba(88, 126, 255, 0.92) 86%, rgba(255, 255, 255, 0) 100%);
-  box-shadow:
-    0 0 10px rgba(129, 236, 255, 0.95),
-    0 0 24px rgba(90, 124, 255, 0.55);
-  filter: saturate(1.12);
-}
-
-.lightning-link::before,
-.lightning-link::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-}
-
-.lightning-link::before {
-  background: repeating-linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.24) 0 7%,
-    rgba(255, 255, 255, 0.96) 7% 16%,
-    rgba(130, 224, 255, 0.18) 16% 26%
-  );
+  overflow: visible;
   mix-blend-mode: screen;
 }
 
-.lightning-link::after {
-  inset: -5px 0;
-  background: radial-gradient(circle at center, rgba(164, 242, 255, 0.88) 0 24%, rgba(164, 242, 255, 0) 70%);
-  opacity: 0.72;
+.lightning-link.is-active {
+  opacity: 1;
 }
 
-.lightning-link.is-active {
-  animation: lightning-link-strike var(--lightning-duration, 220ms) ease-out var(--lightning-delay, 0ms) both;
+.lightning-link-path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: var(--beam-length, 120);
+  stroke-dashoffset: var(--beam-length, 120);
+}
+
+.lightning-link.is-active .lightning-link-path {
+  animation: rainbow-beam-draw var(--lightning-duration, 220ms) cubic-bezier(0.2, 0.72, 0.18, 1) both;
+}
+
+.lightning-link-path--glow {
+  stroke-width: 3;
+  filter:
+    drop-shadow(0 0 3px rgba(255, 228, 146, 0.28))
+    drop-shadow(0 0 7px rgba(144, 225, 255, 0.22));
+  opacity: 0.52;
+}
+
+.lightning-link-path--core {
+  stroke-width: 1.1;
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.38));
+  opacity: 0.88;
+}
+
+.lightning-link-flare {
+  fill: rgba(255, 244, 201, 0.84);
+  filter:
+    drop-shadow(0 0 3px rgba(255, 244, 201, 0.46))
+    drop-shadow(0 0 6px rgba(131, 221, 255, 0.2));
+}
+
+.lightning-link-flare--source {
+  fill: rgba(255, 250, 232, 0.94);
+}
+
+.lightning-link-flare--target {
+  fill: rgba(255, 237, 193, 0.82);
+}
+
+@keyframes rainbow-beam-draw {
+  0% {
+    stroke-dashoffset: var(--beam-length, 120);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 1;
+  }
+
+  72% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+.lightball-fusion-focus {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(9, 6, 24, 0.2) 0 10%, rgba(8, 6, 20, 0.78) 26%, rgba(0, 0, 0, 0.9) 64%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0.9));
+  backdrop-filter: blur(4px) brightness(0.42);
+}
+
+.wind-gust {
+  position: fixed;
+  z-index: 63;
+  opacity: 0;
+  overflow: visible;
+  pointer-events: none;
+  clip-path: inset(0 100% 0 0);
+}
+
+.wind-gust-shape {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+}
+
+.wind-gust-shape--mist {
+  mix-blend-mode: screen;
+}
+
+.wind-gust-shape--core {
+  fill: rgba(243, 251, 255, 0.58);
+}
+
+.wind-gust-shape--upper {
+  fill: rgba(220, 245, 255, 0.34);
+}
+
+.wind-gust-shape--lower {
+  fill: rgba(237, 250, 255, 0.26);
+}
+
+.wind-gust-shape--core.wind-gust-shape--mist {
+  fill: rgba(244, 252, 255, 0.22);
+}
+
+.wind-gust-shape--upper.wind-gust-shape--mist {
+  fill: rgba(218, 244, 255, 0.14);
+}
+
+.wind-gust-shape--lower.wind-gust-shape--mist {
+  fill: rgba(235, 249, 255, 0.12);
+}
+
+.wind-gust.is-active {
+  animation: wind-gust-reveal var(--wind-line-duration, 220ms) ease-out var(--wind-line-delay, 0ms) both;
+}
+
+.wind-gust.is-active .wind-gust-shape {
+  animation:
+    wind-gust-body calc(var(--wind-line-duration, 220ms) * var(--wind-duration-scale, 1)) cubic-bezier(0.18, 0.86, 0.2, 1) var(--wind-line-delay, 0ms) both,
+    wind-gust-drift calc(var(--wind-line-duration, 220ms) * 0.82) ease-in-out var(--wind-line-delay, 0ms) both;
+}
+
+.wind-gust-mote {
+  position: fixed;
+  z-index: 62;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(245, 252, 255, 0.88) 0 24%, rgba(217, 244, 255, 0.42) 50%, rgba(217, 244, 255, 0) 82%);
+  filter: blur(0.4px);
 }
 
 .lightball-particle {
@@ -1458,6 +1588,60 @@ body {
   100% {
     opacity: 0;
     transform: translate(-50%, -74%) scale(0.94);
+  }
+}
+
+@keyframes wind-gust-reveal {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  16% {
+    opacity: 1;
+    clip-path: inset(0 78% 0 0);
+  }
+  54% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+  82% {
+    opacity: 0.92;
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes wind-gust-body {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scaleX(0.72) scaleY(0.86);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(0, 0) scaleX(0.92) scaleY(1.02);
+  }
+  54% {
+    opacity: 0.92;
+    transform: translate(calc(var(--wind-drift-x, 0px) * 0.18), calc(var(--wind-drift-y, 0px) * 0.18)) scaleX(1.04) scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--wind-settle-x, 0px), var(--wind-settle-y, 0px)) scaleX(1.12) scaleY(0.74);
+  }
+}
+
+@keyframes wind-gust-drift {
+  0% {
+    transform: translate(0, 0) scale(0.96);
+  }
+  46% {
+    transform: translate(var(--wind-drift-x, 0px), var(--wind-drift-y, 0px)) scale(1.02);
+  }
+  100% {
+    transform: translate(var(--wind-settle-x, 0px), var(--wind-settle-y, 0px)) scale(1);
   }
 }
 

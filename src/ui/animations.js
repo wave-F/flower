@@ -7,10 +7,11 @@ const LIGHTBALL_LINK_DURATION = 280;
 const LIGHTBALL_LINK_STAGGER = 54;
 const LIGHTBALL_TARGET_HOLD = 140;
 const LIGHTBALL_CLEAR_DURATION = 200;
-const DUAL_LIGHTBALL_CHARGE_DURATION = 150;
-const DUAL_LIGHTBALL_ORBIT_DURATION = 340;
-const DUAL_LIGHTBALL_FLASH_DURATION = 260;
-const DUAL_LIGHTBALL_SHOCKWAVE_DURATION = 320;
+const DUAL_LIGHTBALL_ORBIT_DURATION = 670;
+const DUAL_LIGHTBALL_COLLISION_STOP_DURATION = 90;
+const DUAL_LIGHTBALL_COLLISION_DURATION = 140;
+const DUAL_LIGHTBALL_FLASH_DURATION = 340;
+const DUAL_LIGHTBALL_SHOCKWAVE_DURATION = 420;
 const DUAL_LIGHTBALL_POP_DURATION = 180;
 const DUAL_LIGHTBALL_WAVE_STAGGER = 14;
 const BOMB_PRIME_DURATION = 300;
@@ -254,17 +255,20 @@ async function animateWindmillEffect({
 }) {
   const consumedTileIds = effect.mergedSourceTileIds ?? new Set();
   const originRect = tileView.getTileRect(effect.originTileId);
+  const windLineDuration = getWindmillCastDuration(windmillTimings);
 
   tileView.popTile(effect.originTileId, {
     duration: getWindmillTotalDuration(windmillTimings),
     spinUpDuration: windmillTimings.spinUpDuration,
-    burstDuration: windmillTimings.burstDuration,
+    burstDuration: windLineDuration,
     scaleMultiplier: effect.type === MERGED_WINDMILL_TYPE ? 1.45 : 1,
   });
 
   await wait(windmillTimings.spinUpDuration);
 
-  const childEffectPromises = [];
+  const targetHitHandlers = new Map();
+  const targetImpactPromises = [];
+  const windLineTargetIds = [];
   for (const targetId of effect.targetTileIds ?? []) {
     if (targetId === effect.originTileId) {
       continue;
@@ -275,43 +279,59 @@ async function animateWindmillEffect({
       continue;
     }
 
-    const childEffect = effectByOriginId.get(targetId);
-    if (childEffect) {
-      childEffectPromises.push(launchSpecialEffect(childEffect, ancestorEffectIds));
-      continue;
-    }
+    windLineTargetIds.push(targetId);
+    targetImpactPromises.push(new Promise((resolve) => {
+      let started = false;
+      targetHitHandlers.set(targetId, () => {
+        if (started) {
+          return;
+        }
 
-    const tile = removedTileById.get(targetId);
-    if (!tile || animatedTileIds.has(tile.id)) {
-      continue;
-    }
-
-    animatedTileIds.add(tile.id);
-
-    // 目标花：飞向 HUD 目标槽位（与光球结算一致），而不是被吹散到屏幕外。
-    if (isGoalTile?.(tile)) {
-      goalFlights.push(new Promise((resolve) => {
-        tileView.flyTile(tile.id, {
-          duration: flyDuration,
-          targetRect: getGoalRect?.(tile.kind.key) ?? null,
-          onArrive: () => {
-            onGoalArrive?.(tile);
-            resolve();
-          },
-        });
-      }));
-      continue;
-    }
-
-    recycleFlights.push(new Promise((resolve) => {
-      tileView.flyTile(tile.id, {
-        duration: Math.max(flyDuration, windmillTimings.flowerFlyDuration),
-        onArrive: resolve,
+        started = true;
+        Promise.resolve(animateWindmillTargetHit({
+          targetId,
+          originRect,
+          removedTileById,
+          effectByOriginId,
+          launchSpecialEffect,
+          ancestorEffectIds,
+          animatedTileIds,
+          goalFlights,
+          recycleFlights,
+          tileView,
+          windmillTimings,
+          flyDuration,
+          isGoalTile,
+          getGoalRect,
+          onGoalArrive,
+        })).finally(resolve);
       });
     }));
   }
 
-  await wait(windmillTimings.burstDuration + windmillTimings.fadeDuration);
+  if (windLineTargetIds.length > 0) {
+    if (originRect) {
+      await tileView.playWindLines({
+        fromRect: originRect,
+        toTileIds: windLineTargetIds,
+        duration: windLineDuration,
+        stagger: windmillTimings.windLineStagger,
+        windConfig: windmillTimings,
+        onTargetHit: (targetId) => {
+          targetHitHandlers.get(targetId)?.();
+        },
+      });
+    } else {
+      windLineTargetIds.forEach((targetId) => {
+        targetHitHandlers.get(targetId)?.();
+      });
+      await wait(windLineDuration);
+    }
+  } else {
+    await wait(windLineDuration);
+  }
+
+  await wait(windmillTimings.fadeDuration);
 
   queueSpecialChargeParticles({
     tileView,
@@ -322,7 +342,7 @@ async function animateWindmillEffect({
     onRecycleArrive,
   });
 
-  await Promise.all(childEffectPromises);
+  await Promise.all(targetImpactPromises);
 }
 
 async function animateBombEffect({
@@ -561,29 +581,19 @@ async function animateDualHiveEffect({
       return distanceA - distanceB || a.y - b.y || a.x - b.x;
     });
 
-  tileView.setLightballChargeState(hiveEffect.originTileId, true);
-  tileView.setLightballChargeState(hiveEffect.secondaryTileId, true);
-
-  await Promise.all([
-    new Promise((resolve) => tileView.pulseTile(hiveEffect.originTileId, {
-      duration: DUAL_LIGHTBALL_CHARGE_DURATION,
-      scaleMultiplier: 1.16,
-      onArrive: resolve,
-    })),
-    new Promise((resolve) => tileView.pulseTile(hiveEffect.secondaryTileId, {
-      duration: DUAL_LIGHTBALL_CHARGE_DURATION,
-      scaleMultiplier: 1.16,
-      onArrive: resolve,
-    })),
-  ]);
+  tileView.setLightballFusionState(hiveEffect.originTileId, true);
+  tileView.setLightballFusionState(hiveEffect.secondaryTileId, true);
+  const fusionFocus = tileView.showLightballFusionFocus();
 
   await new Promise((resolve) => {
     tileView.orbitTilesIntoFusion(hiveEffect.originTileId, hiveEffect.secondaryTileId, {
       duration: DUAL_LIGHTBALL_ORBIT_DURATION,
-      turns: 0.96,
+      turns: 1.7,
       clockwise: hiveEffect.originX <= hiveEffect.secondaryX,
-      endScale: 0.9,
-      flareDuration: 170,
+      endScale: 0.98,
+      flareDuration: 220,
+      stopDuration: DUAL_LIGHTBALL_COLLISION_STOP_DURATION,
+      collisionDuration: DUAL_LIGHTBALL_COLLISION_DURATION,
       onArrive: resolve,
     });
   });
@@ -594,21 +604,24 @@ async function animateDualHiveEffect({
   tileView.clearLightballFxState(hiveEffect.secondaryTileId);
 
   await Promise.all([
+    fusionFocus.dismiss(),
     new Promise((resolve) => tileView.playBoardShockwave({
       rect: fusionRect,
       duration: DUAL_LIGHTBALL_SHOCKWAVE_DURATION,
+      sizeMultiplier: 9.4,
+      shakeStrength: 1.6,
       onArrive: resolve,
     })),
     new Promise((resolve) => tileView.playBoardFlash({
       duration: DUAL_LIGHTBALL_FLASH_DURATION,
+      maxOpacity: 1,
       onArrive: resolve,
     })),
   ]);
 
-  const flightTargets = [
-    result.removedTiles.find((tile) => tile.id === hiveEffect.originTileId),
-    ...targets,
-  ].filter(Boolean);
+  tileView.unmountTile(hiveEffect.originTileId);
+
+  const flightTargets = targets;
 
   for (const [index, tile] of flightTargets.entries()) {
     animatedTileIds.add(tile.id);
@@ -634,8 +647,88 @@ async function animateDualHiveEffect({
   await wait(DUAL_LIGHTBALL_POP_DURATION + Math.max(0, flightTargets.length - 1) * DUAL_LIGHTBALL_WAVE_STAGGER);
 }
 
+async function animateWindmillTargetHit({
+  targetId,
+  originRect,
+  removedTileById,
+  effectByOriginId,
+  launchSpecialEffect,
+  ancestorEffectIds,
+  animatedTileIds,
+  goalFlights,
+  recycleFlights,
+  tileView,
+  windmillTimings,
+  flyDuration,
+  isGoalTile,
+  getGoalRect,
+  onGoalArrive,
+}) {
+  await playWindmillTargetHit(tileView, originRect, targetId, windmillTimings.targetHitPulseDuration);
+
+  const childEffect = effectByOriginId.get(targetId);
+  if (childEffect) {
+    await launchSpecialEffect(childEffect, ancestorEffectIds);
+    return;
+  }
+
+  const tile = removedTileById.get(targetId);
+  if (!tile || animatedTileIds.has(tile.id)) {
+    return;
+  }
+
+  animatedTileIds.add(tile.id);
+
+  // 风线命中后再进入既有结算，让玩家先看清楚是谁被吹掉。
+  if (isGoalTile?.(tile)) {
+    goalFlights.push(new Promise((resolve) => {
+      tileView.flyTile(tile.id, {
+        duration: flyDuration,
+        targetRect: getGoalRect?.(tile.kind.key) ?? null,
+        onArrive: () => {
+          onGoalArrive?.(tile);
+          resolve();
+        },
+      });
+    }));
+    return;
+  }
+
+  recycleFlights.push(new Promise((resolve) => {
+    tileView.flyTile(tile.id, {
+      duration: Math.max(flyDuration, windmillTimings.flowerFlyDuration),
+      onArrive: resolve,
+    });
+  }));
+}
+
+function playWindmillTargetHit(tileView, originRect, tileId, duration) {
+  if (!tileId || duration <= 0) {
+    return Promise.resolve();
+  }
+
+  const targetRect = tileView.getTileRect(tileId);
+  const originCenterX = originRect ? originRect.left + originRect.width / 2 : targetRect?.left ?? 0;
+  const originCenterY = originRect ? originRect.top + originRect.height / 2 : targetRect?.top ?? 0;
+  const targetCenterX = targetRect ? targetRect.left + targetRect.width / 2 : originCenterX;
+  const targetCenterY = targetRect ? targetRect.top + targetRect.height / 2 : originCenterY;
+
+  return new Promise((resolve) => {
+    tileView.gustHitTile(tileId, {
+      duration,
+      directionX: targetCenterX - originCenterX,
+      directionY: targetCenterY - originCenterY,
+      onArrive: resolve,
+    });
+  });
+}
+
+function getWindmillCastDuration(timings) {
+  return timings.windLineDuration ?? timings.burstDuration;
+}
+
 function getWindmillTotalDuration(timings) {
-  return timings.spinUpDuration + timings.burstDuration + timings.fadeDuration;
+  return timings.spinUpDuration + getWindmillCastDuration(timings) + timings.fadeDuration;
 }
 
 function queueSpecialChargeParticles({
