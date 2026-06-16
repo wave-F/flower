@@ -1478,18 +1478,21 @@ export function initialize(doc = globalThis.document) {
   }
 
   async function runEndgameSpecialCleanup() {
-    let cleanupCount = 0;
-
-    while (true) {
-      const specialTile = pickEndgameSpecialTile();
-      if (!specialTile) {
-        break;
-      }
-
-      cleanupCount += 1;
-      hudView.setStatus("收尾结算", `激活剩余道具 ${cleanupCount}`);
-      await resolveEndgameSpecialTile(specialTile);
+    const { columns, rows } = getCurrentLevelSettings();
+    const specialTiles = getEndgameSpecialTiles();
+    if (specialTiles.length === 0) {
+      return;
     }
+
+    const dualHivePair = findEndgameDualHivePair(specialTiles, columns, rows);
+    hudView.setStatus("收尾结算", `同时激活剩余道具 ${specialTiles.length} 个`);
+
+    if (dualHivePair) {
+      await resolveEndgameSpecialTile(dualHivePair[0]);
+      return;
+    }
+
+    await resolveEndgameSpecialBatch(specialTiles);
   }
 
   async function resolveEndgameSpecialTile(tile) {
@@ -1509,6 +1512,103 @@ export function initialize(doc = globalThis.document) {
     }
 
     await resolveEndgameChain(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds);
+  }
+
+  async function resolveEndgameSpecialBatch(specialTiles) {
+    if (specialTiles.length === 0) {
+      return;
+    }
+
+    const { columns, rows, tileKinds } = getCurrentLevelSettings();
+    const clickedCell = { x: specialTiles[0].x, y: specialTiles[0].y };
+    const recycleGoalProgress = createRecycleGoalProgressSnapshot();
+    const tilesToRemoveById = new Map();
+    const windmillEffects = [];
+    const bombEffects = [];
+    const hiveEffects = [];
+
+    for (const tile of specialTiles) {
+      const currentTile = state.board[tile.y]?.[tile.x] ?? null;
+      if (!currentTile?.special || currentTile.id !== tile.id) {
+        continue;
+      }
+
+      if (isHiveTile(currentTile)) {
+        const selectedKindKey = pickRandomBoardFlowerKind();
+        const targetTiles = selectedKindKey ? collectTilesByKindKey(selectedKindKey) : [];
+        tilesToRemoveById.set(currentTile.id, currentTile);
+        targetTiles.forEach((targetTile) => tilesToRemoveById.set(targetTile.id, targetTile));
+
+        if (targetTiles.length > 0) {
+          hiveEffects.push({
+            originTileId: currentTile.id,
+            originX: currentTile.x,
+            originY: currentTile.y,
+            triggeredByTileId: null,
+            targetTileIds: new Set(targetTiles.map((targetTile) => targetTile.id)),
+          });
+        }
+        continue;
+      }
+
+      const targets = getSpecialTargets(currentTile, columns, rows);
+      targets.forEach((targetTile) => tilesToRemoveById.set(targetTile.id, targetTile));
+
+      if (isWindmillTile(currentTile)) {
+        windmillEffects.push({
+          type: currentTile.special.type,
+          originTileId: currentTile.id,
+          originX: currentTile.x,
+          originY: currentTile.y,
+          triggeredByTileId: null,
+          mergedSourceTileIds: new Set(),
+          targetTileIds: new Set(targets.map((targetTile) => targetTile.id)),
+        });
+        continue;
+      }
+
+      if (isBombTile(currentTile)) {
+        bombEffects.push({
+          type: currentTile.special.type,
+          originTileId: currentTile.id,
+          originX: currentTile.x,
+          originY: currentTile.y,
+          triggeredByTileId: null,
+          targetTileIds: new Set(targets.map((targetTile) => targetTile.id)),
+        });
+      }
+    }
+
+    const tilesToRemove = [...tilesToRemoveById.values()];
+    if (tilesToRemove.length === 0) {
+      return;
+    }
+
+    const result = applyRemovalsAndCollapse({
+      board: state.board,
+      tilesToRemove,
+      tileGroups: [tilesToRemove],
+      columns,
+      rows,
+      state,
+      tileKinds,
+      specialCreationContext: { allowSpecialCreation: false, clickedCell },
+      applyObstacleDamage: (removedTiles) => applyBrickDamage(state, removedTiles, columns, rows),
+      isBlocked,
+      isHole,
+    });
+
+    if (windmillEffects.length > 0) {
+      result.windmillEffects = windmillEffects;
+    }
+    if (bombEffects.length > 0) {
+      result.bombEffects = bombEffects;
+    }
+    if (hiveEffects.length > 0) {
+      result.hiveEffects = hiveEffects;
+    }
+
+    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾" });
   }
 
   async function resolveEndgameChain(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds) {
@@ -1632,7 +1732,7 @@ export function initialize(doc = globalThis.document) {
     ]);
   }
 
-  function pickEndgameSpecialTile() {
+  function getEndgameSpecialTiles() {
     const { columns, rows } = getCurrentLevelSettings();
     const specialTiles = [];
 
@@ -1646,7 +1746,28 @@ export function initialize(doc = globalThis.document) {
     }
 
     specialTiles.sort((a, b) => a.y - b.y || a.x - b.x || a.id - b.id);
-    return specialTiles[0] ?? null;
+    return specialTiles;
+  }
+
+  function pickEndgameSpecialTile() {
+    return getEndgameSpecialTiles()[0] ?? null;
+  }
+
+  function findEndgameDualHivePair(specialTiles, columns, rows) {
+    const specialIds = new Set(specialTiles.map((tile) => tile.id));
+
+    for (const tile of specialTiles) {
+      if (!isHiveTile(tile)) {
+        continue;
+      }
+
+      const partner = findAdjacentHivePartner(tile, columns, rows);
+      if (partner && specialIds.has(partner.id)) {
+        return [tile, partner];
+      }
+    }
+
+    return null;
   }
 
   function createSpecialCreationContext(previousResult, clickedCell, allowSpecialCreation = true) {
