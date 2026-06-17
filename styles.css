@@ -924,7 +924,7 @@ body {
   border-radius: 50%;
   background:
     conic-gradient(
-      from -90deg,
+      from 180deg,
       #ffd85a 0deg,
       #ffb63c var(--charge-angle),
       rgba(73, 42, 109, 0.28) var(--charge-angle),
