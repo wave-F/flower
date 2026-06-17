@@ -1321,9 +1321,23 @@ body {
   opacity: 0.3;
 }
 
+.tile.is-dropping {
+  z-index: 6;
+  will-change: left, top, transform;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
 .tile--special.is-spawning {
   --tile-scale: 0;
   opacity: 0;
+}
+
+.tile--special.is-dropping {
+  transition:
+    opacity 220ms ease,
+    transform 280ms cubic-bezier(0.18, 0.92, 0.22, 1);
 }
 
 .tile.is-growing {

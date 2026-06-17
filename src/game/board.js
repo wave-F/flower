@@ -225,8 +225,10 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
   const canOccupy = (x, y) => x >= 0 && x < columns && y >= 0 && y < rows && !isHole(x, y) && !isBlocked(x, y);
 
   let moved = true;
+  let collapseStep = 0;
   while (moved) {
     moved = false;
+    collapseStep += 1;
 
     for (let y = rows - 2; y >= 0; y -= 1) {
       for (let x = 0; x < columns; x += 1) {
@@ -245,12 +247,15 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
 
         const existingSpawn = spawnedById.get(tile.id);
         if (existingSpawn) {
+          existingSpawn.toX = nextPosition.x;
           existingSpawn.toRow = nextPosition.y;
+          existingSpawn.path.push({ x: nextPosition.x, y: nextPosition.y, step: collapseStep });
         } else {
           const existingMove = droppedById.get(tile.id);
           if (existingMove) {
             existingMove.toX = nextPosition.x;
             existingMove.toY = nextPosition.y;
+            existingMove.path.push({ x: nextPosition.x, y: nextPosition.y, step: collapseStep });
           } else {
             droppedById.set(tile.id, {
               tile,
@@ -258,6 +263,7 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
               fromY: y,
               toX: nextPosition.x,
               toY: nextPosition.y,
+              path: [{ x: nextPosition.x, y: nextPosition.y, step: collapseStep }],
             });
           }
         }
@@ -272,7 +278,13 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
     for (const cell of spawnCells) {
       const tile = createTile(state, cell.x, cell.y, randomKind(tileKinds));
       board[cell.y][cell.x] = tile;
-      spawnedById.set(tile.id, { tile, fromRow: -1, toRow: cell.y });
+      spawnedById.set(tile.id, {
+        tile,
+        fromRow: -1,
+        toX: cell.x,
+        toRow: cell.y,
+        path: [{ x: cell.x, y: cell.y, step: collapseStep }],
+      });
       moved = true;
     }
   }

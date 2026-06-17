@@ -211,10 +211,10 @@ export async function animateResolution({
       });
 
     await Promise.resolve(onAfterRemoval?.(result));
-    animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
+    const dropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
       speedMultiplier,
     });
-    await wait(scaledFallDuration);
+    await wait(Math.max(scaledFallDuration, dropDuration));
 
     return {
       goalFlights: Promise.all(goalFlights),
@@ -259,10 +259,10 @@ export async function animateResolution({
 
   // 下落与花朵飞散/飞行并行，不被飞行时长阻塞
   await Promise.resolve(onAfterRemoval?.(result));
-  animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
+  const dropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
     speedMultiplier,
   });
-  await wait(scaledFallDuration);
+  await wait(Math.max(scaledFallDuration, dropDuration));
 
   return {
     goalFlights: Promise.all(goalFlights),
@@ -752,35 +752,59 @@ function sortByCenterFirst(items, columns, rows) {
 
 function animateDrops(dropped, spawned, createdSpecialTiles, tileView, { speedMultiplier = 1 } = {}) {
   const metrics = tileView.getBoardMetrics();
+  const queueStepDuration = scaleDuration(88, speedMultiplier);
   const getDropDuration = (distance) => scaleDuration(
     Math.max(220, Math.min(720, 180 + distance * 95)),
     speedMultiplier,
   );
+  let longestDropDuration = 0;
+
+  const updateLongestDropDuration = (duration) => {
+    longestDropDuration = Math.max(longestDropDuration, duration);
+  };
 
   for (const created of createdSpecialTiles) {
     const element = tileView.mountSpawnedTile(created.tile, created.fromRow, metrics);
-    tileView.setDropDuration(element, getDropDuration(Math.abs(created.tile.y - created.fromRow)));
-    tileView.setTileBoardPosition(element, created.tile.x, created.tile.y, metrics);
-    requestAnimationFrame(() => {
-      element.classList.remove("is-spawning");
+    const dropDuration = getDropDuration(Math.abs(created.tile.y - created.fromRow));
+    tileView.setDropDuration(element, dropDuration);
+    tileView.animateDropPath(element, [{ x: created.tile.x, y: created.tile.y, step: 1 }], {
+      duration: dropDuration,
+      metrics,
     });
+    updateLongestDropDuration(dropDuration);
   }
 
   for (const move of dropped) {
     const element = tileView.getTileElement(move.tile.id);
     if (element) {
       const distance = Math.max(Math.abs((move.toX ?? move.tile.x) - (move.fromX ?? move.tile.x)), Math.abs(move.toY - move.fromY));
-      tileView.setDropDuration(element, getDropDuration(distance));
-      tileView.setTileBoardPosition(element, move.tile.x, move.toY, metrics);
+      const timelineDuration = getDropTimelineDuration(move.path, queueStepDuration);
+      const dropDuration = Math.max(getDropDuration(distance), timelineDuration);
+      tileView.setDropDuration(element, dropDuration);
+      tileView.animateDropPath(element, move.path ?? [{ x: move.tile.x, y: move.toY }], {
+        duration: dropDuration,
+        metrics,
+      });
+      updateLongestDropDuration(dropDuration);
     }
   }
 
   for (const spawn of spawned) {
     const element = tileView.mountSpawnedTile(spawn.tile, spawn.fromRow, metrics);
-    tileView.setDropDuration(element, getDropDuration(Math.abs(spawn.toRow - spawn.fromRow)));
-    tileView.setTileBoardPosition(element, spawn.tile.x, spawn.toRow, metrics);
-    requestAnimationFrame(() => {
-      element.classList.remove("is-spawning");
+    const timelineDuration = getDropTimelineDuration(spawn.path, queueStepDuration);
+    const dropDuration = Math.max(getDropDuration(Math.abs(spawn.toRow - spawn.fromRow)), timelineDuration);
+    tileView.setDropDuration(element, dropDuration);
+    tileView.animateDropPath(element, spawn.path ?? [{ x: spawn.toX ?? spawn.tile.x, y: spawn.toRow }], {
+      duration: dropDuration,
+      metrics,
     });
+    updateLongestDropDuration(dropDuration);
   }
+
+  return longestDropDuration;
+}
+
+function getDropTimelineDuration(path = [], queueStepDuration) {
+  const lastStep = path.reduce((maxStep, point, index) => Math.max(maxStep, point.step ?? index + 1), 0);
+  return Math.max(queueStepDuration, lastStep * queueStepDuration);
 }
