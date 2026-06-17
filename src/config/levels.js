@@ -219,10 +219,7 @@ export const LEVELS = [
     rows: 8,
     moveLimit: 32,
     tileKinds: [1, 2, 3, 4, 5, 0],
-    bricks: [
-      [1, 1], [2, 1], [5, 1], [6, 1],
-      [1, 3], [2, 3], [5, 3], [6, 3],
-    ],
+    bricks: lineRow(3, 8),
     crates: cratesFromCells(lineRow(5, 8)),
     goals: [
       { kind: "brick", count: 8 },
