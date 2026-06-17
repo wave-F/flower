@@ -198,10 +198,13 @@ export async function animateResolution({
       });
 
     await Promise.resolve(onAfterRemoval?.(result));
-    const dropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
+    const dropResult = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
       speedMultiplier,
     });
-    await wait(Math.max(scaledFallDuration, dropDuration));
+    await Promise.all([
+      wait(Math.max(scaledFallDuration, dropResult.duration)),
+      dropResult.finished,
+    ]);
 
     return {
       goalFlights: Promise.all(goalFlights),
@@ -253,10 +256,13 @@ export async function animateResolution({
 
   // 下落与花朵飞散/飞行并行，不被飞行时长阻塞
   await Promise.resolve(onAfterRemoval?.(result));
-  const dropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
+  const dropResult = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
     speedMultiplier,
   });
-  await wait(Math.max(scaledFallDuration, dropDuration));
+  await Promise.all([
+    wait(Math.max(scaledFallDuration, dropResult.duration)),
+    dropResult.finished,
+  ]);
 
   return {
     goalFlights: Promise.all(goalFlights),
@@ -948,6 +954,7 @@ function animateDrops(dropped, spawned, createdSpecialTiles, tileView, { speedMu
     speedMultiplier,
   );
   let longestDropDuration = 0;
+  const dropAnimations = [];
 
   const updateLongestDropDuration = (duration) => {
     longestDropDuration = Math.max(longestDropDuration, duration);
@@ -957,10 +964,10 @@ function animateDrops(dropped, spawned, createdSpecialTiles, tileView, { speedMu
     const element = tileView.mountSpawnedTile(created.tile, created.fromRow, metrics);
     const dropDuration = getDropDuration(Math.abs(created.tile.y - created.fromRow));
     tileView.setDropDuration(element, dropDuration);
-    tileView.animateDropPath(element, [{ x: created.tile.x, y: created.tile.y, step: 1 }], {
+    dropAnimations.push(tileView.animateDropPath(element, [{ x: created.tile.x, y: created.tile.y, step: 1 }], {
       duration: dropDuration,
       metrics,
-    });
+    }));
     updateLongestDropDuration(dropDuration);
   }
 
@@ -974,10 +981,10 @@ function animateDrops(dropped, spawned, createdSpecialTiles, tileView, { speedMu
       const timelineDuration = getDropTimelineDuration(move.path, queueStepDuration);
       const dropDuration = Math.max(getDropDuration(distance), timelineDuration);
       tileView.setDropDuration(element, dropDuration);
-      tileView.animateDropPath(element, move.path ?? [{ x: move.toX ?? move.tile.x, y: move.toY }], {
+      dropAnimations.push(tileView.animateDropPath(element, move.path ?? [{ x: move.toX ?? move.tile.x, y: move.toY }], {
         duration: dropDuration,
         metrics,
-      });
+      }));
       updateLongestDropDuration(dropDuration);
     }
   }
@@ -987,14 +994,17 @@ function animateDrops(dropped, spawned, createdSpecialTiles, tileView, { speedMu
     const timelineDuration = getDropTimelineDuration(spawn.path, queueStepDuration);
     const dropDuration = Math.max(getDropDuration(Math.abs(spawn.toRow - spawn.fromRow)), timelineDuration);
     tileView.setDropDuration(element, dropDuration);
-    tileView.animateDropPath(element, spawn.path ?? [{ x: spawn.toX ?? spawn.tile.x, y: spawn.toRow }], {
+    dropAnimations.push(tileView.animateDropPath(element, spawn.path ?? [{ x: spawn.toX ?? spawn.tile.x, y: spawn.toRow }], {
       duration: dropDuration,
       metrics,
-    });
+    }));
     updateLongestDropDuration(dropDuration);
   }
 
-  return longestDropDuration;
+  return {
+    duration: longestDropDuration,
+    finished: Promise.all(dropAnimations),
+  };
 }
 
 function getDropTimelineDuration(path = [], queueStepDuration) {

@@ -169,7 +169,7 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
 
   function animateDropPath(element, path = [], { duration, metrics = getCurrentBoardMetrics() } = {}) {
     if (!element || path.length === 0) {
-      return;
+      return Promise.resolve();
     }
 
     if (element._dropAnimation) {
@@ -197,7 +197,7 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
 
     if (keyframes.length === 1) {
       element.classList.remove("is-dropping", "is-spawning");
-      return;
+      return Promise.resolve();
     }
 
     const animation = element.animate(keyframes, {
@@ -207,21 +207,26 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     });
     element._dropAnimation = animation;
 
-    animation.finished.then(() => {
-      if (element._dropAnimation !== animation) {
-        return;
-      }
+    return new Promise((resolve) => {
+      animation.finished.then(() => {
+        if (element._dropAnimation !== animation) {
+          resolve();
+          return;
+        }
 
-      animation.cancel();
-      delete element._dropAnimation;
-      element.classList.remove("is-dropping", "is-spawning");
-      element.style.left = `${finalPoint.left}px`;
-      element.style.top = `${finalPoint.top}px`;
-    }).catch(() => {
-      if (element._dropAnimation === animation) {
+        animation.cancel();
         delete element._dropAnimation;
         element.classList.remove("is-dropping", "is-spawning");
-      }
+        element.style.left = `${finalPoint.left}px`;
+        element.style.top = `${finalPoint.top}px`;
+        resolve();
+      }).catch(() => {
+        if (element._dropAnimation === animation) {
+          delete element._dropAnimation;
+          element.classList.remove("is-dropping", "is-spawning");
+        }
+        resolve();
+      });
     });
   }
 
