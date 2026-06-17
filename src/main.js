@@ -52,6 +52,7 @@ const HIVE_KIND = { key: "hive", label: "Lightball", name: "光球" };
 const HIVE_BEE_COUNT = 5;
 const CLICK_HISTORY_SIZE = 5;
 const ENDGAME_SPEED_STEPS = [1.1, 1.2, 1.3, 1.4, 1.5];
+const AUTO_SPECIAL_CREATION_CASCADE_LIMIT = 2;
 const FIRST_SCREEN_STATIC_ASSET_PATHS = ["./assets/HandPointer.png"];
 const GRASS_KIND_KEY = "grass";
 const RECYCLE_HIVE_THRESHOLD = 70;
@@ -1698,7 +1699,11 @@ export function initialize(doc = globalThis.document) {
         applyObstacleDamage: (removedTiles) => applyObstacleDamage(state, removedTiles, columns, rows),
         isBlocked,
         isHole,
-        specialCreationContext: createSpecialCreationContext(previousResult, clickedCell, allowSpecialCreation),
+        specialCreationContext: createSpecialCreationContext(
+          previousResult,
+          clickedCell,
+          allowSpecialCreation && cascadeCount <= AUTO_SPECIAL_CREATION_CASCADE_LIMIT,
+        ),
       });
       const excludedHiveTargetTileIds = collectExcludedHiveTargetTileIds(result);
       const removedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress, {
