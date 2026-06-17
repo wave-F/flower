@@ -8,6 +8,7 @@ const LIGHTBALL_LINK_DURATION = 280;
 const LIGHTBALL_LINK_STAGGER = 54;
 const LIGHTBALL_TARGET_HOLD = 140;
 const LIGHTBALL_CLEAR_DURATION = 200;
+const DUAL_LIGHTBALL_CHARGE_DURATION = 150;
 const BOMB_PRIME_DURATION = 300;
 const BOMB_BLAST_RADIUS_CELLS = 2;
 const BOMB_POP_DURATION = 220;
@@ -42,6 +43,7 @@ export async function animateResolution({
   removeDuration,
   fallDuration,
   flyDuration,
+  speedMultiplier = 1,
   isGoalTile,
   shouldChargeTile,
   getGoalRect,
@@ -65,8 +67,24 @@ export async function animateResolution({
     ...(result.bombEffect ? [result.bombEffect] : []),
   ];
   const hasSpecialEffects = windmillEffects.length > 0 || hiveEffects.length > 0 || bombEffects.length > 0;
-  const windmillTimings = WINDMILL_TIMINGS;
-  const dualLightballTimings = DUAL_LIGHTBALL_TIMINGS;
+  const windmillTimings = scaleWindmillTimings(WINDMILL_TIMINGS, speedMultiplier);
+  const lightballTimings = {
+    chargeDuration: scaleDuration(LIGHTBALL_CHARGE_DURATION, speedMultiplier),
+    linkDuration: scaleDuration(LIGHTBALL_LINK_DURATION, speedMultiplier),
+    linkStagger: scaleDuration(LIGHTBALL_LINK_STAGGER, speedMultiplier),
+    targetHold: scaleDuration(LIGHTBALL_TARGET_HOLD, speedMultiplier),
+    clearDuration: scaleDuration(LIGHTBALL_CLEAR_DURATION, speedMultiplier),
+  };
+  const dualLightballTimings = scaleDualLightballTimings(DUAL_LIGHTBALL_TIMINGS, speedMultiplier);
+  const bombTimings = {
+    primeDuration: scaleDuration(BOMB_PRIME_DURATION, speedMultiplier),
+    popDuration: scaleDuration(BOMB_POP_DURATION, speedMultiplier),
+    shockwaveDuration: scaleDuration(BOMB_SHOCKWAVE_DURATION, speedMultiplier),
+  };
+  const scaledRemoveDuration = scaleDuration(removeDuration, speedMultiplier);
+  const scaledFallDuration = scaleDuration(fallDuration, speedMultiplier);
+  const scaledFlyDuration = scaleDuration(flyDuration, speedMultiplier);
+  const groupFlyStagger = scaleDuration(GROUP_FLY_STAGGER, speedMultiplier);
   const goalFlights = [];
   const recycleFlights = [];
 
@@ -109,7 +127,7 @@ export async function animateResolution({
           recycleFlights,
           tileView,
           windmillTimings,
-          flyDuration,
+          flyDuration: scaledFlyDuration,
           isGoalTile,
           shouldChargeTile,
           getGoalRect,
@@ -128,19 +146,19 @@ export async function animateResolution({
           goalFlights,
           recycleFlights,
           tileView,
-          flyDuration,
+          flyDuration: scaledFlyDuration,
           isGoalTile,
           shouldChargeTile,
           getGoalRect,
           getRecycleRect,
           onGoalArrive,
           onRecycleArrive,
+          bombTimings,
         });
       } else {
         promise = animateHiveEffect({
           result,
           hiveEffect: effect,
-          dualLightballTimings,
           effectByOriginId,
           launchSpecialEffect,
           ancestorEffectIds: nextAncestorEffectIds,
@@ -148,13 +166,15 @@ export async function animateResolution({
           goalFlights,
           recycleFlights,
           tileView,
-          flyDuration,
+          flyDuration: scaledFlyDuration,
           isGoalTile,
           shouldChargeTile,
           getGoalRect,
           getRecycleRect,
           onGoalArrive,
           onRecycleArrive,
+          lightballTimings,
+          dualLightballTimings,
         });
       }
 
@@ -178,8 +198,10 @@ export async function animateResolution({
       });
 
     await Promise.resolve(onAfterRemoval?.(result));
-    const actualDropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView);
-    await wait(Math.max(fallDuration, actualDropDuration));
+    const dropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
+      speedMultiplier,
+    });
+    await wait(Math.max(scaledFallDuration, dropDuration));
 
     return {
       goalFlights: Promise.all(goalFlights),
@@ -188,7 +210,7 @@ export async function animateResolution({
   }
 
   removedTileGroups.forEach((group, groupIndex) => {
-    const delay = groupIndex * GROUP_FLY_STAGGER;
+    const delay = groupIndex * groupFlyStagger;
 
     for (const tile of group) {
       const shouldFlyToGoal = isGoalTile?.(tile);
@@ -198,7 +220,7 @@ export async function animateResolution({
           setTimeout(() => {
             const shouldFlyToRecycle = shouldChargeTile?.(tile) ?? false;
             tileView.flyTile(tile.id, {
-              duration: flyDuration,
+              duration: scaledFlyDuration,
               targetRect: shouldFlyToRecycle ? (getRecycleRect?.() ?? null) : null,
               onArrive: () => {
                 if (shouldFlyToRecycle) {
@@ -215,7 +237,7 @@ export async function animateResolution({
       goalFlights.push(new Promise((resolve) => {
         setTimeout(() => {
           tileView.flyTile(tile.id, {
-            duration: flyDuration,
+            duration: scaledFlyDuration,
             targetRect: getGoalRect?.(tile.kind.key) ?? null,
             onArrive: () => {
               onGoalArrive?.(tile);
@@ -227,12 +249,14 @@ export async function animateResolution({
     }
   });
 
-  await wait(removeDuration + Math.max(0, removedTileGroups.length - 1) * GROUP_FLY_STAGGER);
+  await wait(scaledRemoveDuration + Math.max(0, removedTileGroups.length - 1) * groupFlyStagger);
 
   // 下落与花朵飞散/飞行并行，不被飞行时长阻塞
   await Promise.resolve(onAfterRemoval?.(result));
-  const actualDropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView);
-  await wait(Math.max(fallDuration, actualDropDuration));
+  const dropDuration = animateDrops(result.dropped, result.spawned, result.createdSpecialTiles ?? [], tileView, {
+    speedMultiplier,
+  });
+  await wait(Math.max(scaledFallDuration, dropDuration));
 
   return {
     goalFlights: Promise.all(goalFlights),
@@ -340,7 +364,6 @@ async function animateWindmillEffect({
   }
 
   await wait(windmillTimings.fadeDuration);
-
   await Promise.all(targetImpactPromises);
 }
 
@@ -361,12 +384,13 @@ async function animateBombEffect({
   getRecycleRect,
   onGoalArrive,
   onRecycleArrive,
+  bombTimings,
 }) {
   const targetCount = Math.max(0, (effect.targetTileIds?.size ?? 1) - 1);
 
   await new Promise((resolve) => {
     tileView.primeBombTile(effect.originTileId, {
-      duration: BOMB_PRIME_DURATION,
+      duration: bombTimings.primeDuration,
       maxScale: Math.min(1.36, 1.24 + targetCount * 0.005),
       onArrive: resolve,
     });
@@ -384,7 +408,7 @@ async function animateBombEffect({
   });
 
   tileView.popTile(effect.originTileId, {
-    duration: BOMB_POP_DURATION,
+    duration: bombTimings.popDuration,
     spinUpDuration: 88,
     burstDuration: 96,
     scaleMultiplier: 1.18,
@@ -462,7 +486,7 @@ async function animateBombEffect({
 
   await new Promise((resolve) => tileView.playBoardShockwave({
     rect: originRect,
-    duration: BOMB_SHOCKWAVE_DURATION,
+    duration: bombTimings.shockwaveDuration,
     targetRects,
     visible: false,
     onTargetReach: (targetId) => {
@@ -479,15 +503,13 @@ async function animateBombEffect({
     targetReachHandlers.get(targetId)?.();
   }
 
-  await wait(Math.max(BOMB_POP_DURATION, BOMB_SHOCKWAVE_DURATION));
-
+  await wait(Math.max(bombTimings.popDuration, bombTimings.shockwaveDuration));
   await Promise.all(childEffectPromises);
 }
 
 async function animateHiveEffect({
   result,
   hiveEffect,
-  dualLightballTimings,
   effectByOriginId,
   launchSpecialEffect,
   ancestorEffectIds,
@@ -502,12 +524,13 @@ async function animateHiveEffect({
   getRecycleRect,
   onGoalArrive,
   onRecycleArrive,
+  lightballTimings,
+  dualLightballTimings,
 }) {
   if (hiveEffect.mode === "dualBoardBurst") {
     await animateDualHiveEffect({
       result,
       hiveEffect,
-      dualLightballTimings,
       effectByOriginId,
       launchSpecialEffect,
       ancestorEffectIds,
@@ -522,6 +545,7 @@ async function animateHiveEffect({
       getRecycleRect,
       onGoalArrive,
       onRecycleArrive,
+      dualLightballTimings,
     });
     return;
   }
@@ -537,24 +561,24 @@ async function animateHiveEffect({
   const targetIds = targets.map((tile) => tile.id);
 
   tileView.setLightballChargeState(hiveEffect.originTileId, true);
-  await wait(LIGHTBALL_CHARGE_DURATION);
+  await wait(lightballTimings.chargeDuration);
 
   await tileView.playLightningLinks({
     fromTileId: hiveEffect.originTileId,
     toTileIds: targetIds,
-    duration: LIGHTBALL_LINK_DURATION,
-    stagger: LIGHTBALL_LINK_STAGGER,
+    duration: lightballTimings.linkDuration,
+    stagger: lightballTimings.linkStagger,
     onTargetLock: (targetTileId) => {
       tileView.setLightballSelectedState(targetTileId, true);
     },
   });
 
-  await wait(LIGHTBALL_TARGET_HOLD);
+  await wait(lightballTimings.targetHold);
   tileView.clearLightballFxState(hiveEffect.originTileId);
 
   const originClear = new Promise((resolve) => {
     tileView.popTile(hiveEffect.originTileId, {
-      duration: LIGHTBALL_CLEAR_DURATION,
+      duration: lightballTimings.clearDuration,
       spinUpDuration: 90,
       burstDuration: 54,
       scaleMultiplier: 1.28,
@@ -603,7 +627,6 @@ async function animateHiveEffect({
 async function animateDualHiveEffect({
   result,
   hiveEffect,
-  dualLightballTimings,
   effectByOriginId,
   launchSpecialEffect,
   ancestorEffectIds,
@@ -618,6 +641,7 @@ async function animateDualHiveEffect({
   getRecycleRect,
   onGoalArrive,
   onRecycleArrive,
+  dualLightballTimings,
 }) {
   const fusionCenterX = (hiveEffect.originX + hiveEffect.secondaryX) / 2;
   const fusionCenterY = (hiveEffect.originY + hiveEffect.secondaryY) / 2;
@@ -637,6 +661,19 @@ async function animateDualHiveEffect({
     fadeInDuration: dualLightballTimings.focusFadeInDuration,
     fadeOutDuration: dualLightballTimings.focusFadeOutDuration,
   });
+
+  await Promise.all([
+    new Promise((resolve) => tileView.pulseTile(hiveEffect.originTileId, {
+      duration: dualLightballTimings.chargeDuration,
+      scaleMultiplier: 1.16,
+      onArrive: resolve,
+    })),
+    new Promise((resolve) => tileView.pulseTile(hiveEffect.secondaryTileId, {
+      duration: dualLightballTimings.chargeDuration,
+      scaleMultiplier: 1.16,
+      onArrive: resolve,
+    })),
+  ]);
 
   await new Promise((resolve) => {
     tileView.orbitTilesIntoFusion(hiveEffect.originTileId, hiveEffect.secondaryTileId, {
@@ -658,6 +695,12 @@ async function animateDualHiveEffect({
 
   const fusionRect = tileView.getTileRect(hiveEffect.originTileId);
   const flightTargets = targets.filter((tile) => tileView.getTileRect(tile.id));
+  const targetRects = flightTargets
+    .map((tile) => {
+      const rect = tileView.getTileRect(tile.id);
+      return rect ? { id: tile.id, rect } : null;
+    })
+    .filter(Boolean);
   const targetReachHandlers = new Map();
   const childEffectPromises = [];
 
@@ -725,7 +768,7 @@ async function animateDualHiveEffect({
       sizeMultiplier: dualLightballTimings.shockwaveSizeMultiplier,
       coverViewport: true,
       shakeStrength: dualLightballTimings.shockwaveShakeStrength,
-      targetRects: flightTargets.map((tile) => ({ id: tile.id, rect: tileView.getTileRect(tile.id) })),
+      targetRects,
       onTargetReach: (targetId) => {
         targetReachHandlers.get(targetId)?.();
       },
@@ -748,6 +791,42 @@ async function animateDualHiveEffect({
 
   await wait(dualLightballTimings.popDuration);
   await Promise.all(childEffectPromises);
+}
+
+function scaleWindmillTimings(timings, speedMultiplier) {
+  const windLineDuration = scaleDuration(timings.windLineDuration ?? timings.burstDuration, speedMultiplier);
+  return {
+    ...timings,
+    spinUpDuration: scaleDuration(timings.spinUpDuration, speedMultiplier),
+    burstDuration: windLineDuration,
+    windLineDuration,
+    windLineStagger: scaleDuration(timings.windLineStagger, speedMultiplier),
+    flowerFlyDuration: scaleDuration(timings.flowerFlyDuration, speedMultiplier),
+    targetHitPulseDuration: scaleDuration(timings.targetHitPulseDuration, speedMultiplier),
+    fadeDuration: scaleDuration(timings.fadeDuration, speedMultiplier),
+  };
+}
+
+function scaleDualLightballTimings(timings, speedMultiplier) {
+  return {
+    ...timings,
+    chargeDuration: scaleDuration(DUAL_LIGHTBALL_CHARGE_DURATION, speedMultiplier),
+    orbitDuration: scaleDuration(timings.orbitDuration, speedMultiplier),
+    stopDuration: scaleDuration(timings.stopDuration, speedMultiplier),
+    collisionDuration: scaleDuration(timings.collisionDuration, speedMultiplier),
+    focusFadeInDuration: scaleDuration(timings.focusFadeInDuration, speedMultiplier),
+    focusFadeOutDuration: scaleDuration(timings.focusFadeOutDuration, speedMultiplier),
+    flareDuration: scaleDuration(timings.flareDuration, speedMultiplier),
+    flashDuration: scaleDuration(timings.flashDuration, speedMultiplier),
+    shockwaveDuration: scaleDuration(timings.shockwaveDuration, speedMultiplier),
+    popDuration: scaleDuration(timings.popDuration, speedMultiplier),
+    waveStagger: scaleDuration(timings.waveStagger, speedMultiplier),
+  };
+}
+
+function scaleDuration(duration, speedMultiplier) {
+  const normalizedSpeed = Number.isFinite(speedMultiplier) && speedMultiplier > 0 ? speedMultiplier : 1;
+  return Math.max(0, Math.round(duration / normalizedSpeed));
 }
 
 async function animateWindmillTargetHit({
@@ -820,7 +899,6 @@ function getWindmillTotalDuration(timings) {
   return timings.spinUpDuration + getWindmillCastDuration(timings) + timings.fadeDuration;
 }
 
-
 export async function animateBoardEntry({ board, tileView, columns, rows, entryGrowDuration, entryTileDelay }) {
   const entries = [];
   const metrics = tileView.getBoardMetrics();
@@ -862,43 +940,64 @@ function sortByCenterFirst(items, columns, rows) {
   });
 }
 
-function animateDrops(dropped, spawned, createdSpecialTiles, tileView) {
+function animateDrops(dropped, spawned, createdSpecialTiles, tileView, { speedMultiplier = 1 } = {}) {
   const metrics = tileView.getBoardMetrics();
-  const getDropDuration = (distance) => Math.max(220, Math.min(720, 180 + distance * 95));
-  let maxDropDuration = 0;
+  const queueStepDuration = scaleDuration(88, speedMultiplier);
+  const getDropDuration = (distance) => scaleDuration(
+    Math.max(220, Math.min(720, 180 + distance * 95)),
+    speedMultiplier,
+  );
+  let longestDropDuration = 0;
+
+  const updateLongestDropDuration = (duration) => {
+    longestDropDuration = Math.max(longestDropDuration, duration);
+  };
 
   for (const created of createdSpecialTiles) {
-    const duration = getDropDuration(Math.abs(created.tile.y - created.fromRow));
     const element = tileView.mountSpawnedTile(created.tile, created.fromRow, metrics);
-    tileView.setDropDuration(element, duration);
-    maxDropDuration = Math.max(maxDropDuration, duration);
-    tileView.setTileBoardPosition(element, created.tile.x, created.tile.y, metrics);
-    requestAnimationFrame(() => {
-      element.classList.remove("is-spawning");
+    const dropDuration = getDropDuration(Math.abs(created.tile.y - created.fromRow));
+    tileView.setDropDuration(element, dropDuration);
+    tileView.animateDropPath(element, [{ x: created.tile.x, y: created.tile.y, step: 1 }], {
+      duration: dropDuration,
+      metrics,
     });
+    updateLongestDropDuration(dropDuration);
   }
 
   for (const move of dropped) {
     const element = tileView.getTileElement(move.tile.id);
     if (element) {
-      const distance = Math.max(Math.abs((move.toX ?? move.tile.x) - (move.fromX ?? move.tile.x)), Math.abs(move.toY - move.fromY));
-      const duration = getDropDuration(distance);
-      tileView.setDropDuration(element, duration);
-      maxDropDuration = Math.max(maxDropDuration, duration);
-      tileView.setTileBoardPosition(element, move.tile.x, move.toY, metrics);
+      const distance = Math.max(
+        Math.abs((move.toX ?? move.tile.x) - (move.fromX ?? move.tile.x)),
+        Math.abs(move.toY - move.fromY),
+      );
+      const timelineDuration = getDropTimelineDuration(move.path, queueStepDuration);
+      const dropDuration = Math.max(getDropDuration(distance), timelineDuration);
+      tileView.setDropDuration(element, dropDuration);
+      tileView.animateDropPath(element, move.path ?? [{ x: move.toX ?? move.tile.x, y: move.toY }], {
+        duration: dropDuration,
+        metrics,
+      });
+      updateLongestDropDuration(dropDuration);
     }
   }
 
   for (const spawn of spawned) {
-    const duration = getDropDuration(Math.abs(spawn.toRow - spawn.fromRow));
     const element = tileView.mountSpawnedTile(spawn.tile, spawn.fromRow, metrics);
-    tileView.setDropDuration(element, duration);
-    maxDropDuration = Math.max(maxDropDuration, duration);
-    tileView.setTileBoardPosition(element, spawn.tile.x, spawn.toRow, metrics);
-    requestAnimationFrame(() => {
-      element.classList.remove("is-spawning");
+    const timelineDuration = getDropTimelineDuration(spawn.path, queueStepDuration);
+    const dropDuration = Math.max(getDropDuration(Math.abs(spawn.toRow - spawn.fromRow)), timelineDuration);
+    tileView.setDropDuration(element, dropDuration);
+    tileView.animateDropPath(element, spawn.path ?? [{ x: spawn.toX ?? spawn.tile.x, y: spawn.toRow }], {
+      duration: dropDuration,
+      metrics,
     });
+    updateLongestDropDuration(dropDuration);
   }
 
-  return maxDropDuration;
+  return longestDropDuration;
+}
+
+function getDropTimelineDuration(path = [], queueStepDuration) {
+  const lastStep = path.reduce((maxStep, point, index) => Math.max(maxStep, point.step ?? index + 1), 0);
+  return Math.max(queueStepDuration, lastStep * queueStepDuration);
 }

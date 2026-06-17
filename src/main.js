@@ -49,6 +49,9 @@ const BOMB_TYPE = "bomb";
 const BOMB_KIND = { key: "bomb", label: "Bomb", name: "炸弹" };
 const HIVE_TYPE = "hive";
 const HIVE_KIND = { key: "hive", label: "Lightball", name: "光球" };
+const HIVE_BEE_COUNT = 5;
+const CLICK_HISTORY_SIZE = 5;
+const ENDGAME_SPEED_STEPS = [1.1, 1.2, 1.3, 1.4, 1.5];
 const FIRST_SCREEN_STATIC_ASSET_PATHS = ["./assets/HandPointer.png"];
 const GRASS_KIND_KEY = "grass";
 const RECYCLE_HIVE_THRESHOLD = 100;
@@ -177,6 +180,9 @@ export function initialize(doc = globalThis.document) {
   }
 
   function renderObstacles(result = null) {
+    updateObstacleGoalProgress("brick", result?.brokenBricks?.length ?? 0);
+    updateObstacleGoalProgress("crate", result?.brokenCrates?.length ?? 0);
+
     if (result?.brokenBricks?.length) {
       tileView.playObstacleShatterEffects(result.brokenBricks, {
         type: "brick",
@@ -192,6 +198,21 @@ export function initialize(doc = globalThis.document) {
     }
 
     tileView.renderBricks(state.bricks, state.crates);
+  }
+
+  function updateObstacleGoalProgress(kind, brokenCount) {
+    if (brokenCount <= 0 || !(kind in state.goalProgress)) {
+      return;
+    }
+
+    const currentLevel = getCurrentLevel();
+    const goalCount = currentLevel.goals.find((goal) => goal.kind === kind)?.count ?? 0;
+    state.goalProgress[kind] = Math.min(
+      goalCount,
+      (state.goalProgress[kind] ?? 0) + brokenCount,
+    );
+    renderHud();
+    hudView.bumpGoal(kind);
   }
 
   function getCurrentLevelSettings() {
@@ -1620,6 +1641,8 @@ export function initialize(doc = globalThis.document) {
     allowSpecialCreation = true,
     countRecycle = true,
     eliminationComboTracker = null,
+    speedMultiplier = 1,
+    consumeSpeedMultiplier = null,
   } = {}) {
     let cascadeCount = 0;
     let recycleChargeGain = 0;
@@ -1659,12 +1682,14 @@ export function initialize(doc = globalThis.document) {
         recycleChargeGain += removedTileResolution.chargeGain;
       }
       previousResult = result;
+      const resolutionSpeedMultiplier = consumeSpeedMultiplier?.() ?? speedMultiplier;
       const resolution = await animateResolution({
         result,
         tileView,
         removeDuration: REMOVE_DURATION,
         fallDuration: FALL_DURATION,
         flyDuration: FLY_DURATION,
+        speedMultiplier: resolutionSpeedMultiplier,
         isGoalTile: (candidate) => removedTileResolution.goalTileIds.has(candidate.id),
         shouldChargeTile: countRecycle
           ? (candidate) => removedTileResolution.chargeTileIds.has(candidate.id)
@@ -1708,18 +1733,19 @@ export function initialize(doc = globalThis.document) {
       return;
     }
 
+    const speedController = createEndgameSpeedController();
     const dualHivePair = findEndgameDualHivePair(specialTiles, columns, rows);
     hudView.setStatus("收尾结算", `同时激活剩余道具 ${specialTiles.length} 个`);
 
     if (dualHivePair) {
-      await resolveEndgameSpecialTile(dualHivePair[0]);
+      await resolveEndgameSpecialTile(dualHivePair[0], speedController);
       return;
     }
 
-    await resolveEndgameSpecialBatch(specialTiles);
+    await resolveEndgameSpecialBatch(specialTiles, speedController);
   }
 
-  async function resolveEndgameSpecialTile(tile) {
+  async function resolveEndgameSpecialTile(tile, speedController) {
     const { columns, rows, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: tile.x, y: tile.y };
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
@@ -1727,18 +1753,18 @@ export function initialize(doc = globalThis.document) {
     if (isHiveTile(tile)) {
       const adjacentHive = findAdjacentHivePartner(tile, columns, rows);
       if (adjacentHive) {
-        await resolveEndgameDualHive(tile, adjacentHive, clickedCell, recycleGoalProgress, columns, rows, tileKinds);
+        await resolveEndgameDualHive(tile, adjacentHive, clickedCell, recycleGoalProgress, columns, rows, tileKinds, speedController);
         return;
       }
 
-      await resolveEndgameHive(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds);
+      await resolveEndgameHive(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds, speedController);
       return;
     }
 
-    await resolveEndgameChain(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds);
+    await resolveEndgameChain(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds, speedController);
   }
 
-  async function resolveEndgameSpecialBatch(specialTiles) {
+  async function resolveEndgameSpecialBatch(specialTiles, speedController) {
     if (specialTiles.length === 0) {
       return;
     }
@@ -1832,10 +1858,10 @@ export function initialize(doc = globalThis.document) {
       result.hiveEffects = hiveEffects;
     }
 
-    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾" });
+    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾", speedController });
   }
 
-  async function resolveEndgameChain(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds) {
+  async function resolveEndgameChain(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds, speedController) {
     const suppressedSpecialIds = new Set(
       collectAllBoardTiles()
         .filter((candidate) => candidate.id !== tile.id && isHiveTile(candidate))
@@ -1857,10 +1883,10 @@ export function initialize(doc = globalThis.document) {
     result.windmillEffects = specialChain.windmillEffects;
     result.bombEffects = specialChain.bombEffects;
     result.hiveEffects = specialChain.hiveEffects;
-    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾" });
+    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾", speedController });
   }
 
-  async function resolveEndgameHive(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds) {
+  async function resolveEndgameHive(tile, clickedCell, recycleGoalProgress, columns, rows, tileKinds, speedController) {
     const selectedKindKey = pickRandomBoardFlowerKind();
     const targetTiles = selectedKindKey ? collectTilesByKindKey(selectedKindKey) : [];
     const result = applyRemovalsAndCollapse({
@@ -1887,10 +1913,10 @@ export function initialize(doc = globalThis.document) {
       }];
     }
 
-    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾" });
+    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾", speedController });
   }
 
-  async function resolveEndgameDualHive(primaryTile, secondaryTile, clickedCell, recycleGoalProgress, columns, rows, tileKinds) {
+  async function resolveEndgameDualHive(primaryTile, secondaryTile, clickedCell, recycleGoalProgress, columns, rows, tileKinds, speedController) {
     const tilesToRemove = collectAllBoardTiles();
     const result = applyRemovalsAndCollapse({
       board: state.board,
@@ -1921,17 +1947,19 @@ export function initialize(doc = globalThis.document) {
           .map((candidate) => candidate.id),
       ),
     }];
-    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾" });
+    await finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel: "收尾", speedController });
   }
 
-  async function finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel }) {
+  async function finalizeEndgameResult({ result, clickedCell, recycleGoalProgress, contextLabel, speedController }) {
     const removedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress);
+    const openingSpeedMultiplier = speedController?.next() ?? 1;
     const resolution = await animateResolution({
       result,
       tileView,
       removeDuration: REMOVE_DURATION,
       fallDuration: FALL_DURATION,
       flyDuration: FLY_DURATION,
+      speedMultiplier: openingSpeedMultiplier,
       isGoalTile: (candidate) => removedTileResolution.goalTileIds.has(candidate.id),
       shouldChargeTile: () => false,
       getGoalRect: hudView.getGoalSwatchRect,
@@ -1946,6 +1974,7 @@ export function initialize(doc = globalThis.document) {
       recycleGoalProgress,
       allowSpecialCreation: false,
       countRecycle: false,
+      consumeSpeedMultiplier: () => speedController?.next() ?? openingSpeedMultiplier,
     });
 
     await Promise.all([
@@ -1992,6 +2021,18 @@ export function initialize(doc = globalThis.document) {
     }
 
     return null;
+  }
+
+  function createEndgameSpeedController() {
+    let index = 0;
+
+    return {
+      next() {
+        const speed = ENDGAME_SPEED_STEPS[Math.min(index, ENDGAME_SPEED_STEPS.length - 1)];
+        index += 1;
+        return speed;
+      },
+    };
   }
 
   function createSpecialCreationContext(previousResult, clickedCell, allowSpecialCreation = true) {

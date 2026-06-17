@@ -167,6 +167,64 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     return element;
   }
 
+  function animateDropPath(element, path = [], { duration, metrics = getCurrentBoardMetrics() } = {}) {
+    if (!element || path.length === 0) {
+      return;
+    }
+
+    if (element._dropAnimation) {
+      element._dropAnimation.cancel();
+      delete element._dropAnimation;
+    }
+
+    const startLeft = parseFloat(element.style.left) || 0;
+    const startTop = parseFloat(element.style.top) || 0;
+    const points = [{ left: startLeft, top: startTop, step: 0 }];
+
+    for (const point of path) {
+      points.push({
+        left: metrics.left + point.x * metrics.span,
+        top: metrics.top + point.y * metrics.span,
+        step: point.step,
+      });
+    }
+
+    const keyframes = buildDropKeyframes(points);
+    const finalPoint = points[points.length - 1];
+    element.classList.add("is-dropping");
+    element.style.left = `${finalPoint.left}px`;
+    element.style.top = `${finalPoint.top}px`;
+
+    if (keyframes.length === 1) {
+      element.classList.remove("is-dropping", "is-spawning");
+      return;
+    }
+
+    const animation = element.animate(keyframes, {
+      duration,
+      easing: "linear",
+      fill: "both",
+    });
+    element._dropAnimation = animation;
+
+    animation.finished.then(() => {
+      if (element._dropAnimation !== animation) {
+        return;
+      }
+
+      animation.cancel();
+      delete element._dropAnimation;
+      element.classList.remove("is-dropping", "is-spawning");
+      element.style.left = `${finalPoint.left}px`;
+      element.style.top = `${finalPoint.top}px`;
+    }).catch(() => {
+      if (element._dropAnimation === animation) {
+        delete element._dropAnimation;
+        element.classList.remove("is-dropping", "is-spawning");
+      }
+    });
+  }
+
   function unmountTile(tileId) {
     const element = tileElements.get(tileId);
     if (!element) {
@@ -2038,6 +2096,11 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
   }
 
   function releaseTileElement(element) {
+    if (element._dropAnimation) {
+      element._dropAnimation.cancel();
+      delete element._dropAnimation;
+    }
+
     element.remove();
     element.className = "tile";
     element.textContent = "";
@@ -2123,6 +2186,42 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     );
   }
 
+  function buildDropKeyframes(points) {
+    if (points.length === 0) {
+      return [];
+    }
+
+    if (points.length === 1) {
+      return [{ left: `${points[0].left}px`, top: `${points[0].top}px` }];
+    }
+
+    const maxStep = Math.max(1, ...points.map((point, index) => point.step ?? index));
+    const keyframes = [{ left: `${points[0].left}px`, top: `${points[0].top}px`, offset: 0 }];
+
+    for (let index = 1; index < points.length; index += 1) {
+      const previousPoint = points[index - 1];
+      const currentPoint = points[index];
+      const previousStep = previousPoint.step ?? index - 1;
+      const currentStep = currentPoint.step ?? index;
+
+      if (currentStep > previousStep) {
+        keyframes.push({
+          left: `${previousPoint.left}px`,
+          top: `${previousPoint.top}px`,
+          offset: Math.max(0, (currentStep - 1) / maxStep),
+        });
+      }
+
+      keyframes.push({
+        left: `${currentPoint.left}px`,
+        top: `${currentPoint.top}px`,
+        offset: Math.min(1, currentStep / maxStep),
+      });
+    }
+
+    return keyframes;
+  }
+
   return {
     clearAllTiles,
     clearBricks,
@@ -2134,6 +2233,7 @@ export function createTileView({ brickLayerElement, tileLayerElement, flyLayerEl
     getTileElement,
     getTileRect,
     gustHitTile,
+    animateDropPath,
     growTileIntoBoard,
     getBoardMetrics: getCurrentBoardMetrics,
     mergeTileIntoTile,

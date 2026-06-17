@@ -1,4 +1,6 @@
 export const TILE_KINDS = [
+  { key: "brick", label: "Brick", name: "砖头", assetPath: "./assets/brick.png" },
+  { key: "crate", label: "Crate", name: "木箱", assetPath: "./assets/box.png" },
   { key: "grass", label: "Grass", name: "杂草", assetPath: "./assets/grass.png" },
   { key: "amber", label: "Amber", name: "橙色", assetPath: "./assets/flowers/flower_1.png" },
   { key: "mint", label: "Mint", name: "粉色", assetPath: "./assets/flowers/flower_2.png" },
