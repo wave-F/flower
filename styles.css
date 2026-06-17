@@ -590,6 +590,14 @@ body {
   --flower-image: url("./assets/grass.png");
 }
 
+.goal-swatch--crate {
+  --flower-image: url("./assets/box.png");
+}
+
+.goal-swatch--brick {
+  --flower-image: url("./assets/brick.png");
+}
+
 .goal-copy {
   min-width: 0;
 }

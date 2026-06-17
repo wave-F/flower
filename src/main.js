@@ -169,6 +169,9 @@ export function initialize(doc = globalThis.document) {
   }
 
   function renderObstacles(result = null) {
+    updateObstacleGoalProgress("brick", result?.brokenBricks?.length ?? 0);
+    updateObstacleGoalProgress("crate", result?.brokenCrates?.length ?? 0);
+
     if (result?.brokenBricks?.length) {
       tileView.playObstacleShatterEffects(result.brokenBricks, {
         type: "brick",
@@ -184,6 +187,21 @@ export function initialize(doc = globalThis.document) {
     }
 
     tileView.renderBricks(state.bricks, state.crates);
+  }
+
+  function updateObstacleGoalProgress(kind, brokenCount) {
+    if (brokenCount <= 0 || !(kind in state.goalProgress)) {
+      return;
+    }
+
+    const currentLevel = getCurrentLevel();
+    const goalCount = currentLevel.goals.find((goal) => goal.kind === kind)?.count ?? 0;
+    state.goalProgress[kind] = Math.min(
+      goalCount,
+      (state.goalProgress[kind] ?? 0) + brokenCount,
+    );
+    renderHud();
+    hudView.bumpGoal(kind);
   }
 
   function getCurrentLevelSettings() {
