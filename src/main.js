@@ -828,6 +828,24 @@ export function initialize(doc = globalThis.document) {
     return excludedTileIds;
   }
 
+  function collectSpecialChargeTileIds({ removedTiles = [], windmillEffects = [], bombEffects = [] } = {}) {
+    const removedTileById = new Map(removedTiles.map((tile) => [tile.id, tile]));
+    const chargeTileIds = new Set();
+
+    for (const effect of [...windmillEffects, ...bombEffects]) {
+      for (const targetTileId of effect?.targetTileIds ?? []) {
+        const targetTile = removedTileById.get(targetTileId);
+        if (!isChargeableTile(targetTile)) {
+          continue;
+        }
+
+        chargeTileIds.add(targetTileId);
+      }
+    }
+
+    return chargeTileIds;
+  }
+
   function countRemovedFlowers(removedTiles, { excludedTileIds = null } = {}) {
     return removedTiles.reduce((sum, tile) => {
       if (!isChargeableTile(tile) || excludedTileIds?.has(tile.id)) {
@@ -1372,6 +1390,17 @@ export function initialize(doc = globalThis.document) {
     const { columns, rows, moveLimit, tileKinds } = getCurrentLevelSettings();
     const clickedCell = { x: primaryTile.x, y: primaryTile.y };
     const tilesToRemove = collectAllBoardTiles();
+    const triggeredSpecialEffects = createBoardSpecialEffects(
+      tilesToRemove.filter((candidate) => (
+        candidate.id !== primaryTile.id
+        && candidate.id !== secondaryTile.id
+        && candidate.special
+        && (isWindmillTile(candidate) || isBombTile(candidate))
+      )),
+      columns,
+      rows,
+      { triggeredByTileId: primaryTile.id },
+    );
 
     hudView.setStatus(
       "双光球共鸣",
@@ -1409,7 +1438,15 @@ export function initialize(doc = globalThis.document) {
         ),
       },
     ];
+    if (triggeredSpecialEffects.windmillEffects.length > 0) {
+      result.windmillEffects = triggeredSpecialEffects.windmillEffects;
+    }
+    if (triggeredSpecialEffects.bombEffects.length > 0) {
+      result.bombEffects = triggeredSpecialEffects.bombEffects;
+    }
     const excludedHiveTargetTileIds = collectExcludedHiveTargetTileIds(result);
+    const specialChargeTileIds = collectSpecialChargeTileIds(result);
+    specialChargeTileIds.forEach((tileId) => excludedHiveTargetTileIds.delete(tileId));
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
     const initialRemovedTileResolution = classifyRemovedTiles(result.removedTiles, recycleGoalProgress, {
       excludedChargeTileIds: excludedHiveTargetTileIds,
@@ -2390,6 +2427,48 @@ export function initialize(doc = globalThis.document) {
       bombEffects,
       hiveEffects,
     };
+  }
+
+  function createBoardSpecialEffects(specialTiles, columns, rows, { triggeredByTileId = null } = {}) {
+    const windmillEffects = [];
+    const bombEffects = [];
+
+    for (const tile of specialTiles) {
+      if (!tile?.special) {
+        continue;
+      }
+
+      const targets = getSpecialTargets(tile, columns, rows).filter((target) => !isHiveTile(target));
+      if (targets.length === 0) {
+        continue;
+      }
+
+      if (isWindmillTile(tile)) {
+        windmillEffects.push({
+          type: tile.special.type,
+          originTileId: tile.id,
+          originX: tile.x,
+          originY: tile.y,
+          triggeredByTileId,
+          mergedSourceTileIds: new Set(),
+          targetTileIds: new Set(targets.map((target) => target.id)),
+        });
+        continue;
+      }
+
+      if (isBombTile(tile)) {
+        bombEffects.push({
+          type: tile.special.type,
+          originTileId: tile.id,
+          originX: tile.x,
+          originY: tile.y,
+          triggeredByTileId,
+          targetTileIds: new Set(targets.map((target) => target.id)),
+        });
+      }
+    }
+
+    return { windmillEffects, bombEffects };
   }
 
   function getSpecialTargets(tile, columns, rows) {

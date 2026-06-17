@@ -488,6 +488,9 @@ async function animateHiveEffect({
   result,
   hiveEffect,
   dualLightballTimings,
+  effectByOriginId,
+  launchSpecialEffect,
+  ancestorEffectIds,
   animatedTileIds,
   goalFlights,
   recycleFlights,
@@ -505,6 +508,9 @@ async function animateHiveEffect({
       result,
       hiveEffect,
       dualLightballTimings,
+      effectByOriginId,
+      launchSpecialEffect,
+      ancestorEffectIds,
       animatedTileIds,
       goalFlights,
       recycleFlights,
@@ -598,6 +604,9 @@ async function animateDualHiveEffect({
   result,
   hiveEffect,
   dualLightballTimings,
+  effectByOriginId,
+  launchSpecialEffect,
+  ancestorEffectIds,
   animatedTileIds,
   goalFlights,
   recycleFlights,
@@ -650,11 +659,28 @@ async function animateDualHiveEffect({
   const fusionRect = tileView.getTileRect(hiveEffect.originTileId);
   const flightTargets = targets.filter((tile) => tileView.getTileRect(tile.id));
   const targetReachHandlers = new Map();
+  const childEffectPromises = [];
 
   tileView.clearLightballFxState(hiveEffect.originTileId);
   tileView.clearLightballFxState(hiveEffect.secondaryTileId);
 
   for (const tile of flightTargets) {
+    const childEffect = effectByOriginId?.get(tile.id);
+    if (childEffect) {
+      let started = false;
+      childEffectPromises.push(new Promise((resolve) => {
+        targetReachHandlers.set(tile.id, () => {
+          if (started) {
+            return;
+          }
+
+          started = true;
+          Promise.resolve(launchSpecialEffect?.(childEffect, ancestorEffectIds)).finally(resolve);
+        });
+      }));
+      continue;
+    }
+
     targetReachHandlers.set(tile.id, () => {
       if (animatedTileIds.has(tile.id)) {
         return;
@@ -721,6 +747,7 @@ async function animateDualHiveEffect({
     });
 
   await wait(dualLightballTimings.popDuration);
+  await Promise.all(childEffectPromises);
 }
 
 async function animateWindmillTargetHit({
