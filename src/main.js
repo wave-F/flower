@@ -68,6 +68,10 @@ const ELIMINATION_COMBO_THRESHOLD = 20;
 const BRICK_ASSET_PATHS = ["./assets/brick.png", "./assets/brick_2.png"];
 const CRATE_ASSET_PATH = "./assets/box.png";
 const ICE_ASSET_PATH = "./assets/ice.png";
+const CLEAR_AUDIO_ASSET_PATH = "./assets/audio/clear.mp3";
+const GET_LIGHTBALL_AUDIO_ASSET_PATH = "./assets/audio/getLightBall.mp3";
+const BGM_AUDIO_ASSET_PATH = "./assets/audio/bgm.mp3";
+const BGM_VOLUME = 0.7;
 
 export function initialize(doc = globalThis.document) {
   if (!doc) {
@@ -76,6 +80,9 @@ export function initialize(doc = globalThis.document) {
 
   const elements = getDomElements(doc);
   const state = createGameState();
+  const clearSound = createSoundEffect(CLEAR_AUDIO_ASSET_PATH);
+  const getLightballSound = createSoundEffect(GET_LIGHTBALL_AUDIO_ASSET_PATH);
+  const backgroundMusic = createLoopingAudio(BGM_AUDIO_ASSET_PATH, { volume: BGM_VOLUME });
   const hudView = createHudView({
     elements,
     appTitle: APP_TITLE,
@@ -123,6 +130,7 @@ export function initialize(doc = globalThis.document) {
   elements.debugLevelJumpButtonElement.addEventListener("click", onDebugLevelJumpButtonClick);
   window.addEventListener("resize", onViewportResize);
   window.addEventListener("orientationchange", onViewportResize);
+  startBackgroundMusic();
 
   startFpsCounter();
   const ready = resetBoard();
@@ -148,6 +156,17 @@ export function initialize(doc = globalThis.document) {
       requestAnimationFrame(update);
     }
     requestAnimationFrame(update);
+  }
+
+  function startBackgroundMusic() {
+    backgroundMusic.play();
+
+    const retryPlay = () => {
+      backgroundMusic.play();
+    };
+
+    doc.addEventListener("pointerdown", retryPlay, { once: true, passive: true });
+    doc.addEventListener("keydown", retryPlay, { once: true });
   }
 
   function getCurrentLevel() {
@@ -785,6 +804,7 @@ export function initialize(doc = globalThis.document) {
     hudView.setStatus("能量转化", `光球落在 ${columnLabel(target.x)} 列 ${target.y + 1} 行`);
     const recycleSourceRect = getRecycleSourceRect();
     if (recycleSourceRect) {
+      getLightballSound.play();
       await new Promise((resolve) => {
         tileView.flyRewardToTile({
           fromRect: recycleSourceRect,
@@ -979,6 +999,10 @@ export function initialize(doc = globalThis.document) {
     renderCollectionTray();
   }
 
+  function playClearSound() {
+    clearSound.play();
+  }
+
   async function processTurn(tile) {
     state.isProcessing = true;
     state.movesUsed += 1;
@@ -1007,6 +1031,9 @@ export function initialize(doc = globalThis.document) {
     const recycleGoalProgress = createRecycleGoalProgressSnapshot();
     const initialRemovedTileResolution = classifyRemovedTiles(initialResult.removedTiles, recycleGoalProgress);
     eliminationComboTracker.addRemovedTiles(initialResult.removedTiles);
+    if (initialResult.removedTiles.length > 0) {
+      playClearSound();
+    }
     const initialResolution = await animateResolution({
       result: initialResult,
       tileView,
@@ -1683,6 +1710,7 @@ export function initialize(doc = globalThis.document) {
       }
       previousResult = result;
       const resolutionSpeedMultiplier = consumeSpeedMultiplier?.() ?? speedMultiplier;
+      playClearSound();
       const resolution = await animateResolution({
         result,
         tileView,
@@ -2703,6 +2731,50 @@ async function preloadFirstScreenAssets(onProgress) {
   return {
     assetPaths,
     results,
+  };
+}
+
+function createSoundEffect(src) {
+  if (typeof Audio !== "function") {
+    return {
+      play() {},
+    };
+  }
+
+  const template = new Audio(src);
+  template.preload = "auto";
+  template.load();
+
+  return {
+    play() {
+      const playback = template.cloneNode();
+      playback.currentTime = 0;
+      void playback.play().catch(() => {
+        // 浏览器若暂时拒绝播放，不影响主流程。
+      });
+    },
+  };
+}
+
+function createLoopingAudio(src, { volume = 1 } = {}) {
+  if (typeof Audio !== "function") {
+    return {
+      play() {},
+    };
+  }
+
+  const audio = new Audio(src);
+  audio.preload = "auto";
+  audio.loop = true;
+  audio.volume = Math.max(0, Math.min(1, volume));
+  audio.load();
+
+  return {
+    play() {
+      void audio.play().catch(() => {
+        // 浏览器若拦截自动播放，等首次用户交互时再重试。
+      });
+    },
   };
 }
 

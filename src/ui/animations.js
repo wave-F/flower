@@ -17,6 +17,12 @@ const MERGED_WINDMILL_TYPE = "mergedWindmill";
 const WINDMILL_FUSION_RETREAT_DURATION = 140;
 const WINDMILL_FUSION_SLAM_DURATION = 220;
 const WINDMILL_FUSION_RETREAT_DISTANCE = 18;
+const WINDMILL_HIT_AUDIO_ASSET_PATH = "./assets/audio/windmill.mp3";
+const BOMB_AUDIO_ASSET_PATH = "./assets/audio/bomb.mp3";
+const LIGHT_AUDIO_ASSET_PATH = "./assets/audio/light.mp3";
+const windmillHitSound = createSoundEffect(WINDMILL_HIT_AUDIO_ASSET_PATH);
+const bombSound = createSoundEffect(BOMB_AUDIO_ASSET_PATH);
+const lightSound = createSoundEffect(LIGHT_AUDIO_ASSET_PATH);
 
 export async function animateWindmillFusion({ primaryTileId, secondaryTileId, tileView, onMerged } = {}) {
   tileView.setWindmillFusionState(primaryTileId, { hideArrow: true, spin: true });
@@ -412,6 +418,7 @@ async function animateBombEffect({
     strength: Math.min(2.1, 1 + targetCount / 18),
     maxRadius: shockwaveMaxRadius,
   });
+  bombSound.play();
 
   tileView.popTile(effect.originTileId, {
     duration: bombTimings.popDuration,
@@ -575,6 +582,7 @@ async function animateHiveEffect({
     duration: lightballTimings.linkDuration,
     stagger: lightballTimings.linkStagger,
     onTargetLock: (targetTileId) => {
+      lightSound.play();
       tileView.setLightballSelectedState(targetTileId, true);
     },
   });
@@ -766,6 +774,7 @@ async function animateDualHiveEffect({
     });
   }
 
+  bombSound.play();
   await Promise.all([
     fusionFocus.dismiss(),
     new Promise((resolve) => tileView.playBoardShockwave({
@@ -866,6 +875,7 @@ async function animateWindmillTargetHit({
   }
 
   animatedTileIds.add(tile.id);
+  windmillHitSound.play();
 
   // 风线命中后直接切入已有移除表现，不再额外播放受击抖动。
   if (isGoalTile?.(tile)) {
@@ -899,6 +909,28 @@ async function animateWindmillTargetHit({
 
 function getWindmillCastDuration(timings) {
   return timings.windLineDuration ?? timings.burstDuration;
+}
+
+function createSoundEffect(src) {
+  if (typeof Audio !== "function") {
+    return {
+      play() {},
+    };
+  }
+
+  const template = new Audio(src);
+  template.preload = "auto";
+  template.load();
+
+  return {
+    play() {
+      const playback = template.cloneNode();
+      playback.currentTime = 0;
+      void playback.play().catch(() => {
+        // 浏览器若暂时拒绝播放，不影响动画主流程。
+      });
+    },
+  };
 }
 
 function getWindmillTotalDuration(timings) {
