@@ -8,6 +8,7 @@ const BOMB_KIND = { key: "bomb", label: "Bomb", name: "炸弹" };
 const WINDMILL_TYPE = "windmill";
 const HIVE_TYPE = "hive";
 const BOMB_TYPE = "bomb";
+const DEFAULT_SPAWN_DIRECT_MATCH_CHANCE = 0.3;
 
 export function createTile(state, x, y, kind) {
   return {
@@ -20,6 +21,68 @@ export function createTile(state, x, y, kind) {
 
 export function randomKind(tileKinds) {
   return tileKinds[Math.floor(Math.random() * tileKinds.length)];
+}
+
+function pickSpawnKind(board, x, y, columns, rows, tileKinds, directMatchChance = 0) {
+  if (Math.random() < directMatchChance) {
+    return randomKind(tileKinds);
+  }
+
+  const startIndex = Math.floor(Math.random() * tileKinds.length);
+
+  for (let offset = 0; offset < tileKinds.length; offset += 1) {
+    const kind = tileKinds[(startIndex + offset) % tileKinds.length];
+    if (!wouldCreateMatch(board, x, y, columns, rows, kind.key)) {
+      return kind;
+    }
+  }
+
+  return tileKinds[startIndex] ?? randomKind(tileKinds);
+}
+
+function wouldCreateMatch(board, startX, startY, columns, rows, kindKey) {
+  const visited = new Set();
+  const stack = [{ x: startX, y: startY }];
+  let groupSize = 0;
+
+  while (stack.length > 0) {
+    const cell = stack.pop();
+    const key = `${cell.x},${cell.y}`;
+    if (visited.has(key)) {
+      continue;
+    }
+
+    visited.add(key);
+    if (cell.x === startX && cell.y === startY) {
+      groupSize += 1;
+    } else {
+      const tile = board[cell.y]?.[cell.x] ?? null;
+      if (!tile || tile.special || tile.kind.key !== kindKey) {
+        continue;
+      }
+
+      groupSize += 1;
+    }
+
+    if (groupSize >= 3) {
+      return true;
+    }
+
+    if (cell.x > 0) {
+      stack.push({ x: cell.x - 1, y: cell.y });
+    }
+    if (cell.x + 1 < columns) {
+      stack.push({ x: cell.x + 1, y: cell.y });
+    }
+    if (cell.y > 0) {
+      stack.push({ x: cell.x, y: cell.y - 1 });
+    }
+    if (cell.y + 1 < rows) {
+      stack.push({ x: cell.x, y: cell.y + 1 });
+    }
+  }
+
+  return false;
 }
 
 export function createBoard({
@@ -106,6 +169,7 @@ export function applyRemovalsAndCollapse({
   state,
   tileKinds,
   specialCreationContext = null,
+  spawnDirectMatchChance = DEFAULT_SPAWN_DIRECT_MATCH_CHANCE,
   applyObstacleDamage = null,
   isBlocked = () => false,
   isHole = () => false,
@@ -158,7 +222,16 @@ export function applyRemovalsAndCollapse({
     brokenCrates: [],
   };
 
-  const collapseResult = collapseBoard({ board, columns, rows, state, tileKinds, isBlocked, isHole });
+  const collapseResult = collapseBoard({
+    board,
+    columns,
+    rows,
+    state,
+    tileKinds,
+    spawnDirectMatchChance,
+    isBlocked,
+    isHole,
+  });
 
   return {
     removedTiles,
@@ -219,7 +292,16 @@ function pickStableTile(group) {
   })[0];
 }
 
-function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () => false, isHole = () => false }) {
+function collapseBoard({
+  board,
+  columns,
+  rows,
+  state,
+  tileKinds,
+  spawnDirectMatchChance = 0,
+  isBlocked = () => false,
+  isHole = () => false,
+}) {
   const droppedById = new Map();
   const spawnedById = new Map();
   const canOccupy = (x, y) => x >= 0 && x < columns && y >= 0 && y < rows && !isHole(x, y) && !isBlocked(x, y);
@@ -276,7 +358,12 @@ function collapseBoard({ board, columns, rows, state, tileKinds, isBlocked = () 
 
     const spawnCells = findSpawnCells(board, columns, rows, canOccupy, isBlocked, isHole);
     for (const cell of spawnCells) {
-      const tile = createTile(state, cell.x, cell.y, randomKind(tileKinds));
+      const tile = createTile(
+        state,
+        cell.x,
+        cell.y,
+        pickSpawnKind(board, cell.x, cell.y, columns, rows, tileKinds, spawnDirectMatchChance),
+      );
       board[cell.y][cell.x] = tile;
       spawnedById.set(tile.id, {
         tile,
