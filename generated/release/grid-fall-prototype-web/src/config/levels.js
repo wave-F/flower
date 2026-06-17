@@ -41,7 +41,7 @@ export const LEVELS = [
     columns: 5,
     rows: 5,
     moveLimit: 10,
-    tileKinds: [1, 2, 3, 0],
+    tileKinds: [1, 2, 3, 7],
     initialBoard: [
       [2, 3, 2, 3, 2],
       [3, 2, 1, 2, 3],
@@ -56,7 +56,7 @@ export const LEVELS = [
     columns: 5,
     rows: 6,
     moveLimit: 12,
-    tileKinds: [1, 2, 3, 0],
+    tileKinds: [1, 2, 3, 7],
     crates: cratesFromCells([[1, 3], [3, 2], [2, 4]]),
     goals: [
       { kind: 1, count: 16 },
@@ -68,7 +68,7 @@ export const LEVELS = [
     columns: 6,
     rows: 6,
     moveLimit: 15,
-    tileKinds: [1, 2, 3, 4, 0],
+    tileKinds: [1, 2, 3, 4, 7],
     bricks: lineRow(2, 6),
     goals: [
       { kind: 1, count: 24 },
@@ -80,7 +80,7 @@ export const LEVELS = [
     columns: 6,
     rows: 6,
     moveLimit: 16,
-    tileKinds: [1, 2, 3, 4, 0],
+    tileKinds: [1, 2, 3, 4, 7],
     crates: cratesFromCells([
       [0, 1],
       [0, 2], [1, 2],
@@ -98,7 +98,7 @@ export const LEVELS = [
     columns: 7,
     rows: 7,
     moveLimit: 18,
-    tileKinds: [1, 2, 3, 4, 0],
+    tileKinds: [1, 2, 3, 4, 7],
     bricks: [[2, 3], [4, 3]],
     crates: cratesFromCells([
       [1, 2], [3, 2], [5, 2],
@@ -116,7 +116,7 @@ export const LEVELS = [
     columns: 7,
     rows: 7,
     moveLimit: 14,
-    tileKinds: [1, 2, 3, 4, 0],
+    tileKinds: [1, 2, 3, 4, 7],
     holes: dashedColumn(3, 7, 1),
     crates: cratesFromCells([
       [1, 2], [2, 2],
@@ -131,7 +131,7 @@ export const LEVELS = [
     columns: 7,
     rows: 8,
     moveLimit: 20,
-    tileKinds: [1, 2, 3, 4, 0],
+    tileKinds: [1, 2, 3, 4, 7],
     holes: dashedRow(4, 7, 1),
     crates: cratesFromCells([
       [1, 2], [3, 2], [5, 2],
@@ -147,7 +147,7 @@ export const LEVELS = [
     columns: 8,
     rows: 8,
     moveLimit: 22,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     crates: cratesFromCells([
       [0, 2], [1, 2], [2, 2],
       [5, 2], [6, 2], [7, 2],
@@ -164,7 +164,7 @@ export const LEVELS = [
     columns: 8,
     rows: 8,
     moveLimit: 24,
-    tileKinds: [0, 2, 3, 4, 5, 6],
+    tileKinds: [7, 2, 3, 4, 5, 6],
     crates: cratesFromCells([
       [0, 0], [7, 0],
       [0, 1], [7, 1],
@@ -186,7 +186,7 @@ export const LEVELS = [
     columns: 8,
     rows: 9,
     moveLimit: 18,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     goals: [{ kind: 1, count: 100 }],
   },
   {
@@ -194,7 +194,7 @@ export const LEVELS = [
     columns: 7,
     rows: 8,
     moveLimit: 26,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     bricks: [[2, 2], [4, 2], [2, 4], [4, 4]],
     goals: [
       { kind: 1, count: 44 },
@@ -206,7 +206,7 @@ export const LEVELS = [
     columns: 8,
     rows: 8,
     moveLimit: 28,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     holes: lineRow(3, 8, [3, 4]),
     bricks: [[2, 2], [5, 2], [3, 5]],
     goals: [
@@ -219,7 +219,7 @@ export const LEVELS = [
     columns: 8,
     rows: 8,
     moveLimit: 30,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     holes: combineHoles(
       lineColumn(2, 8, [3, 4]),
       lineColumn(5, 8, [3, 4]),
@@ -236,7 +236,7 @@ export const LEVELS = [
     columns: 8,
     rows: 9,
     moveLimit: 28,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     bricks: [[2, 2], [5, 2], [2, 6], [5, 6]],
     goals: [
       { kind: 2, count: 56 },
@@ -248,7 +248,7 @@ export const LEVELS = [
     columns: 8,
     rows: 9,
     moveLimit: 24,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     goals: [{ kind: 3, count: 100 }],
   },
   {
@@ -256,7 +256,7 @@ export const LEVELS = [
     columns: 8,
     rows: 9,
     moveLimit: 30,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     holes: combineHoles(
       lineColumn(2, 9, [4]),
       lineColumn(5, 9, [4]),
@@ -273,7 +273,7 @@ export const LEVELS = [
     columns: 8,
     rows: 10,
     moveLimit: 32,
-    tileKinds: [1, 2, 3, 4, 6, 0],
+    tileKinds: [1, 2, 3, 4, 6, 7],
     holes: combineHoles(lineColumn(3, 10, [4, 5]), lineRow(4, 8, [3, 4])),
     bricks: [[2, 4], [5, 4]],
     crates: cratesFromCells([[1, 3], [6, 3], [2, 7], [5, 7]]),
@@ -288,7 +288,7 @@ export const LEVELS = [
     columns: 8,
     rows: 10,
     moveLimit: 34,
-    tileKinds: [1, 2, 3, 5, 6, 0],
+    tileKinds: [1, 2, 3, 5, 6, 7],
     bricks: [[2, 2], [5, 2], [2, 7], [5, 7]],
     crates: cratesFromCells([[1, 4], [6, 4], [3, 5], [4, 5]]),
     goals: [
@@ -302,7 +302,7 @@ export const LEVELS = [
     columns: 9,
     rows: 9,
     moveLimit: 32,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     holes: rect(3, 2, 3, 5),
     crates: cratesFromCells([[1, 2], [7, 2], [1, 6], [7, 6]]),
     goals: [
@@ -316,7 +316,7 @@ export const LEVELS = [
     columns: 9,
     rows: 9,
     moveLimit: 24,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     goals: [{ kind: 1, count: 120 }],
   },
   {
@@ -324,7 +324,7 @@ export const LEVELS = [
     columns: 9,
     rows: 10,
     moveLimit: 34,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     holes: combineHoles(
       lineColumn(2, 10, [4, 5]),
       lineColumn(6, 10, [4, 5]),
@@ -341,7 +341,7 @@ export const LEVELS = [
     columns: 9,
     rows: 10,
     moveLimit: 36,
-    tileKinds: [1, 2, 3, 5, 6, 0],
+    tileKinds: [1, 2, 3, 5, 6, 7],
     bricks: [[2, 1], [6, 1], [2, 8], [6, 8]],
     crates: cratesFromCells([[1, 4], [7, 4], [3, 5], [5, 5]]),
     goals: [
@@ -355,7 +355,7 @@ export const LEVELS = [
     columns: 9,
     rows: 10,
     moveLimit: 36,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     holes: combineHoles(
       lineColumn(2, 10, [4, 5]),
       lineRow(4, 9, [2, 6]),
@@ -372,7 +372,7 @@ export const LEVELS = [
     columns: 10,
     rows: 10,
     moveLimit: 38,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     holes: combineHoles(
       lineColumn(3, 10, [4]),
       lineColumn(6, 10, [5]),
@@ -389,7 +389,7 @@ export const LEVELS = [
     columns: 10,
     rows: 10,
     moveLimit: 26,
-    tileKinds: [1, 2, 3, 4, 5, 0],
+    tileKinds: [1, 2, 3, 4, 5, 7],
     goals: [{ kind: 2, count: 140 }],
   },
   {
@@ -397,7 +397,7 @@ export const LEVELS = [
     columns: 10,
     rows: 10,
     moveLimit: 40,
-    tileKinds: [1, 2, 3, 5, 6, 0],
+    tileKinds: [1, 2, 3, 5, 6, 7],
     bricks: [[2, 2], [7, 2], [2, 7], [7, 7], [4, 4]],
     crates: cratesFromCells([[1, 4], [8, 4], [4, 1], [4, 8]]),
     goals: [
@@ -411,7 +411,7 @@ export const LEVELS = [
     columns: 10,
     rows: 10,
     moveLimit: 42,
-    tileKinds: [1, 2, 4, 5, 6, 0],
+    tileKinds: [1, 2, 4, 5, 6, 7],
     holes: combineHoles(
       lineColumn(2, 10, [3, 7]),
       lineColumn(7, 10, [2, 6]),
@@ -429,7 +429,7 @@ export const LEVELS = [
     columns: 10,
     rows: 10,
     moveLimit: 44,
-    tileKinds: [1, 3, 4, 5, 6, 0],
+    tileKinds: [1, 3, 4, 5, 6, 7],
     holes: rect(3, 2, 4, 5),
     crates: cratesFromCells([[1, 2], [8, 2], [1, 7], [8, 7]]),
     goals: [
@@ -443,7 +443,7 @@ export const LEVELS = [
     columns: 10,
     rows: 11,
     moveLimit: 46,
-    tileKinds: [2, 3, 4, 5, 6, 0],
+    tileKinds: [2, 3, 4, 5, 6, 7],
     bricks: [[2, 2], [7, 2], [2, 8], [7, 8]],
     crates: cratesFromCells([[4, 1], [5, 1], [4, 9], [5, 9]]),
     goals: [
@@ -457,7 +457,7 @@ export const LEVELS = [
     columns: 10,
     rows: 11,
     moveLimit: 48,
-    tileKinds: [1, 3, 4, 5, 6, 0],
+    tileKinds: [1, 3, 4, 5, 6, 7],
     holes: combineHoles(lineColumn(3, 11, [2, 5, 8]), lineColumn(6, 11, [1, 5, 9]), lineRow(5, 10, [3, 4, 5, 6])),
     crates: cratesFromCells([[1, 2], [8, 2], [1, 8], [8, 8], [4, 4], [5, 6]]),
     goals: [
